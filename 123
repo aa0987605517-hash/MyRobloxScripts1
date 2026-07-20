@@ -1,0 +1,629 @@
+-- ==========================================
+-- 1. 內嵌 Yielding Hub 風格高相容 UI 框架
+-- ==========================================
+local YieldingHub = {}
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+function YieldingHub:CreateWindow(hubName)
+    hubName = hubName or "Yielding Hub | Premium"
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "YieldingHub_Core"
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    ScreenGui.ResetOnSpawn = false
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 550, 0, 360)
+    MainFrame.Position = UDim2.new(0.5, -275, 0.5, -180)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+    
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 5)
+    MainCorner.Parent = MainFrame
+    
+    -- 左側導航面板
+    local LeftPanel = Instance.new("Frame")
+    LeftPanel.Name = "LeftPanel"
+    LeftPanel.Size = UDim2.new(0, 160, 1, 0)
+    LeftPanel.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+    LeftPanel.BorderSizePixel = 0
+    LeftPanel.Parent = MainFrame
+    
+    local LeftCorner = Instance.new("UICorner")
+    LeftCorner.CornerRadius = UDim.new(0, 5)
+    LeftCorner.Parent = LeftPanel
+    
+    -- 標題 (Yielding Hub 風格橘紅/極光色系調配)
+    local Title = Instance.new("TextLabel")
+    Title.Name = "Title"
+    Title.Size = UDim2.new(1, 0, 0, 45)
+    Title.BackgroundTransparency = 1
+    Title.Text = hubName
+    Title.TextColor3 = Color3.fromRGB(240, 84, 84)
+    Title.TextSize = 16
+    Title.Font = Enum.Font.Code
+    Title.Parent = LeftPanel
+    
+    local TabContainer = Instance.new("ScrollingFrame")
+    TabContainer.Name = "TabContainer"
+    TabContainer.Size = UDim2.new(1, 0, 1, -50)
+    TabContainer.Position = UDim2.new(0, 0, 0, 45)
+    TabContainer.BackgroundTransparency = 1
+    TabContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+    TabContainer.ScrollBarThickness = 0
+    TabContainer.Parent = LeftPanel
+    
+    local TabLayout = Instance.new("UIListLayout")
+    TabLayout.Padding = UDim.new(0, 4)
+    TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    TabLayout.Parent = TabContainer
+    
+    -- 右側內容展示區
+    local ContentContainer = Instance.new("Frame")
+    ContentContainer.Name = "ContentContainer"
+    ContentContainer.Size = UDim2.new(1, -170, 1, -15)
+    ContentContainer.Position = UDim2.new(0, 165, 0, 8)
+    ContentContainer.BackgroundTransparency = 1
+    ContentContainer.Parent = MainFrame
+
+    local library = {}
+    local firstTab = true
+    
+    function library:ToggleUI()
+        MainFrame.Visible = not MainFrame.Visible
+    end
+    
+    function library:NewTab(tabName)
+        local TabButton = Instance.new("TextButton")
+        TabButton.Name = tabName.."_Btn"
+        TabButton.Size = UDim2.new(1, -12, 0, 32)
+        TabButton.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+        TabButton.Text = tabName
+        TabButton.TextColor3 = Color3.fromRGB(160, 160, 160)
+        TabButton.Font = Enum.Font.SourceSans
+        TabButton.TextSize = 14
+        TabButton.Parent = TabContainer
+        
+        local ButtonCorner = Instance.new("UICorner")
+        ButtonCorner.CornerRadius = UDim.new(0, 4)
+        ButtonCorner.Parent = TabButton
+        
+        local TabPage = Instance.new("ScrollingFrame")
+        TabPage.Name = tabName.."_Page"
+        TabPage.Size = UDim2.new(1, 0, 1, 0)
+        TabPage.BackgroundTransparency = 1
+        TabPage.ScrollBarThickness = 3
+        TabPage.ScrollBarImageColor3 = Color3.fromRGB(240, 84, 84)
+        TabPage.CanvasSize = UDim2.new(0, 0, 0, 0)
+        TabPage.Visible = false
+        TabPage.Parent = ContentContainer
+        
+        local PageLayout = Instance.new("UIListLayout")
+        PageLayout.Padding = UDim.new(0, 6)
+        PageLayout.Parent = TabPage
+        
+        PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            TabPage.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 10)
+        end)
+        
+        if firstTab then
+            TabPage.Visible = true
+            TabButton.BackgroundColor3 = Color3.fromRGB(240, 84, 84)
+            TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            firstTab = false
+        end
+        
+        TabButton.MouseButton1Click:Connect(function()
+            for _, page in ipairs(ContentContainer:GetChildren()) do
+                if page:IsA("ScrollingFrame") then page.Visible = false end
+            end
+            for _, btn in ipairs(TabContainer:GetChildren()) do
+                if btn:IsA("TextButton") then 
+                    btn.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+                    btn.TextColor3 = Color3.fromRGB(160, 160, 160)
+                end
+            end
+            TabPage.Visible = true
+            TabButton.BackgroundColor3 = Color3.fromRGB(240, 84, 84)
+            TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        end)
+        
+        local tabMethods = {}
+        
+        function tabMethods:NewSection(sectionName)
+            local SectionLabel = Instance.new("TextLabel")
+            SectionLabel.Size = UDim2.new(1, -6, 0, 24)
+            SectionLabel.BackgroundTransparency = 1
+            SectionLabel.Text = " // " .. sectionName
+            SectionLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+            SectionLabel.TextXAlignment = Enum.TextXAlignment.Left
+            SectionLabel.Font = Enum.Font.Code
+            SectionLabel.TextSize = 12
+            SectionLabel.Parent = TabPage
+            
+            local secMethods = {}
+            
+            function secMethods:NewToggle(text, desc, callback)
+                local ToggleFrame = Instance.new("Frame")
+                ToggleFrame.Size = UDim2.new(1, -6, 0, 36)
+                ToggleFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+                ToggleFrame.BorderSizePixel = 0
+                ToggleFrame.Parent = TabPage
+                
+                local TCorn = Instance.new("UICorner")
+                TCorn.CornerRadius = UDim.new(0, 4)
+                TCorn.Parent = ToggleFrame
+                
+                local Label = Instance.new("TextLabel")
+                Label.Size = UDim2.new(0.7, 0, 1, 0)
+                Label.Position = UDim2.new(0, 10, 0, 0)
+                Label.BackgroundTransparency = 1
+                Label.Text = text
+                Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.Font = Enum.Font.SourceSans
+                Label.TextSize = 14
+                Label.Parent = ToggleFrame
+                
+                local Trigger = Instance.new("TextButton")
+                Trigger.Size = UDim2.new(0, 42, 0, 20)
+                Trigger.Position = UDim2.new(1, -52, 0.5, -10)
+                Trigger.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                Trigger.Text = ""
+                Trigger.Parent = ToggleFrame
+                
+                local TrigCorn = Instance.new("UICorner")
+                TrigCorn.CornerRadius = UDim.new(0, 10)
+                TrigCorn.Parent = Trigger
+                
+                local Dot = Instance.new("Frame")
+                Dot.Size = UDim2.new(0, 14, 0, 14)
+                Dot.Position = UDim2.new(0, 3, 0.5, -7)
+                Dot.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+                Dot.Parent = Trigger
+                
+                local DotCorn = Instance.new("UICorner")
+                DotCorn.CornerRadius = UDim.new(1, 0)
+                DotCorn.Parent = Dot
+                
+                local state = false
+                Trigger.MouseButton1Click:Connect(function()
+                    state = not state
+                    if state then
+                        Trigger.BackgroundColor3 = Color3.fromRGB(240, 84, 84)
+                        Dot.Position = UDim2.new(1, -17, 0.5, -7)
+                    else
+                        Trigger.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                        Dot.Position = UDim2.new(0, 3, 0.5, -7)
+                    end
+                    pcall(callback, state)
+                end)
+            end
+            
+            function secMethods:NewTextBox(text, desc, callback)
+                local BoxFrame = Instance.new("Frame")
+                BoxFrame.Size = UDim2.new(1, -6, 0, 36)
+                BoxFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+                BoxFrame.Parent = TabPage
+                
+                local BCorn = Instance.new("UICorner")
+                BCorn.CornerRadius = UDim.new(0, 4)
+                BCorn.Parent = BoxFrame
+                
+                local Label = Instance.new("TextLabel")
+                Label.Size = UDim2.new(0.5, 0, 1, 0)
+                Label.Position = UDim2.new(0, 10, 0, 0)
+                Label.BackgroundTransparency = 1
+                Label.Text = text
+                Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.Font = Enum.Font.SourceSans
+                Label.TextSize = 14
+                Label.Parent = BoxFrame
+                
+                local Box = Instance.new("TextBox")
+                Box.Size = UDim2.new(0.35, 0, 0, 24)
+                Box.Position = UDim2.new(1, -10, 0.5, -12)
+                Box.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+                Box.TextColor3 = Color3.fromRGB(255, 255, 255)
+                Box.Text = ""
+                Box.PlaceholderText = "數字後按Enter..."
+                Box.Font = Enum.Font.SourceSans
+                Box.TextSize = 13
+                Box.Parent = BoxFrame
+                
+                local BoxCorn = Instance.new("UICorner")
+                BoxCorn.CornerRadius = UDim.new(0, 4)
+                BoxCorn.Parent = Box
+                
+                Box.FocusLost:Connect(function(enterPressed)
+                    if enterPressed then
+                        pcall(callback, Box.Text)
+                    end
+                end)
+            end
+            
+            function secMethods:NewSlider(text, desc, max, min, callback)
+                local SliderFrame = Instance.new("Frame")
+                SliderFrame.Size = UDim2.new(1, -6, 0, 46)
+                SliderFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+                SliderFrame.Parent = TabPage
+                
+                local SCorn = Instance.new("UICorner")
+                SCorn.CornerRadius = UDim.new(0, 4)
+                SCorn.Parent = SliderFrame
+                
+                local Label = Instance.new("TextLabel")
+                Label.Size = UDim2.new(0.6, 0, 0, 20)
+                Label.Position = UDim2.new(0, 10, 0, 2)
+                Label.BackgroundTransparency = 1
+                Label.Text = text
+                Label.TextColor3 = Color3.fromRGB(210, 210, 210)
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.Font = Enum.Font.SourceSans
+                Label.TextSize = 14
+                Label.Parent = SliderFrame
+                
+                local ValLabel = Instance.new("TextLabel")
+                ValLabel.Size = UDim2.new(0.3, 0, 0, 20)
+                ValLabel.Position = UDim2.new(1, -110, 0, 2)
+                ValLabel.BackgroundTransparency = 1
+                ValLabel.Text = tostring(min)
+                ValLabel.TextColor3 = Color3.fromRGB(240, 84, 84)
+                ValLabel.TextXAlignment = Enum.TextXAlignment.Right
+                ValLabel.Font = Enum.Font.Code
+                ValLabel.TextSize = 13
+                ValLabel.Parent = SliderFrame
+                
+                local SliderTrack = Instance.new("TextButton")
+                SliderTrack.Size = UDim2.new(1, -20, 0, 5)
+                SliderTrack.Position = UDim2.new(0, 10, 0, 30)
+                SliderTrack.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+                SliderTrack.Text = ""
+                SliderTrack.Parent = SliderFrame
+                
+                local TrackCorn = Instance.new("UICorner")
+                TrackCorn.CornerRadius = UDim.new(1, 0)
+                TrackCorn.Parent = SliderTrack
+                
+                local SliderFill = Instance.new("Frame")
+                SliderFill.Size = UDim2.new(0, 0, 1, 0)
+                SliderFill.BackgroundColor3 = Color3.fromRGB(240, 84, 84)
+                SliderFill.Parent = SliderTrack
+                
+                local FillCorn = Instance.new("UICorner")
+                FillCorn.CornerRadius = UDim.new(1, 0)
+                FillCorn.Parent = SliderFill
+                
+                local dragging = false
+                local function updateSlider()
+                    local mouseX = UserInputService:GetMouseLocation().X
+                    local trackX = SliderTrack.AbsolutePosition.X
+                    local trackWidth = SliderTrack.AbsoluteSize.X
+                    local percentage = math.clamp((mouseX - trackX) / trackWidth, 0, 1)
+                    local val = math.floor(min + ((max - min) * percentage))
+                    ValLabel.Text = tostring(val)
+                    SliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+                    pcall(callback, val)
+                end
+                
+                SliderTrack.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        dragging = true
+                        updateSlider()
+                    end
+                end)
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        dragging = false
+                    end
+                end)
+                UserInputService.InputChanged:Connect(function(input)
+                    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                        updateSlider()
+                    end
+                end)
+            end
+            
+            function secMethods:NewDropdown(text, desc, list, callback)
+                local DropFrame = Instance.new("Frame")
+                DropFrame.Size = UDim2.new(1, -6, 0, 36)
+                DropFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+                DropFrame.ClipsDescendants = true
+                DropFrame.Parent = TabPage
+                
+                local DCorn = Instance.new("UICorner")
+                DCorn.CornerRadius = UDim.new(0, 4)
+                DCorn.Parent = DropFrame
+                
+                local Label = Instance.new("TextLabel")
+                Label.Size = UDim2.new(0.6, 0, 0, 36)
+                Label.Position = UDim2.new(0, 10, 0, 0)
+                Label.BackgroundTransparency = 1
+                Label.Text = text
+                Label.TextColor3 = Color3.fromRGB(210, 210, 210)
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.Font = Enum.Font.SourceSans
+                Label.TextSize = 14
+                Label.Parent = DropFrame
+                
+                local OpenBtn = Instance.new("TextButton")
+                OpenBtn.Size = UDim2.new(0, 75, 0, 22)
+                OpenBtn.Position = UDim2.new(1, -85, 0, 7)
+                OpenBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+                OpenBtn.Text = "選取 ▼"
+                OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                OpenBtn.Font = Enum.Font.SourceSans
+                OpenBtn.TextSize = 12
+                OpenBtn.Parent = DropFrame
+                
+                local OBCorn = Instance.new("UICorner")
+                OBCorn.CornerRadius = UDim.new(0, 4)
+                OBCorn.Parent = OpenBtn
+                
+                local ListContainer = Instance.new("Frame")
+                ListContainer.Size = UDim2.new(1, -20, 0, #list * 24)
+                ListContainer.Position = UDim2.new(0, 10, 0, 42)
+                ListContainer.BackgroundTransparency = 1
+                ListContainer.Parent = DropFrame
+                
+                local ListLayout = Instance.new("UIListLayout")
+                ListLayout.Padding = UDim.new(0, 2)
+                ListLayout.Parent = ListContainer
+                
+                local open = false
+                local function toggleDrop()
+                    open = not open
+                    if open then
+                        DropFrame.Size = UDim2.new(1, -6, 0, 46 + (#list * 24))
+                        OpenBtn.Text = "關閉 ▲"
+                    else
+                        DropFrame.Size = UDim2.new(1, -6, 0, 36)
+                        OpenBtn.Text = "選取 ▼"
+                    end
+                end
+                OpenBtn.MouseButton1Click:Connect(toggleDrop)
+                
+                for _, item in ipairs(list) do
+                    local ItemBtn = Instance.new("TextButton")
+                    ItemBtn.Size = UDim2.new(1, 0, 0, 22)
+                    ItemBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+                    ItemBtn.Text = item
+                    ItemBtn.TextColor3 = Color3.fromRGB(190, 190, 190)
+                    ItemBtn.Font = Enum.Font.SourceSans
+                    ItemBtn.TextSize = 13
+                    ItemBtn.Parent = ListContainer
+                    
+                    local ICorn = Instance.new("UICorner")
+                    ICorn.CornerRadius = UDim.new(0, 3)
+                    ICorn.Parent = ItemBtn
+                    
+                    ItemBtn.MouseButton1Click:Connect(function()
+                        Label.Text = text .. " (" .. item .. ")"
+                        toggleDrop()
+                        pcall(callback, item)
+                    end)
+                end
+            end
+            
+            return secMethods
+        end
+        return tabMethods
+    end
+    return library
+end
+
+-- ==========================================
+-- 2. 功能初始化與引擎變數
+-- ==========================================
+local Window = YieldingHub:CreateWindow("Yielding Hub | Customized V2")
+local Players = game:GetService("Players")
+local Camera = workspace.CurrentCamera
+
+local flying, flySpeed, bv, bg, flyConnection = false, 50, nil, nil, nil
+local antiFlingEnabled, antiFlingConnection = false, nil
+local espMasterEnabled, espBoxEnabled, espNameEnabled, espHealthEnabled, espTracerEnabled = false, false, false, false, false
+local cache = {}
+local aimbotEnabled, aimbotTeamCheck, aimbotPart, isAiming = false, false, "Head", false
+
+-- ==========================================
+-- 3. 本機操控功能實作 (移動、飛行、反彈)
+-- ==========================================
+local function startFlying()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return end
+    humanoid.PlatformStand = true
+    bg = Instance.new("BodyGyro") bg.P = 9e4 bg.maxTorque = Vector3.new(9e9, 9e9, 9e9) bg.cframe = root.CFrame bg.Parent = root
+    bv = Instance.new("BodyVelocity") bv.velocity = Vector3.new(0, 0, 0) bv.maxForce = Vector3.new(9e9, 9e9, 9e9) bv.Parent = root
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if not flying or not root then if flyConnection then flyConnection:Disconnect() end return end
+        bg.cframe = Camera.CFrame
+        local direction = Vector3.new(0, 0, 0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction = direction + Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction = direction - Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction = direction - Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction = direction + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction = direction + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then direction = direction - Vector3.new(0, 1, 0) end
+        bv.velocity = direction.Magnitude > 0 and direction.Unit * flySpeed or Vector3.new(0, 0, 0)
+    end)
+end
+
+local function stopFlying()
+    flying = false
+    if flyConnection then flyConnection:Disconnect() end
+    if bv then bv:Destroy() end if bg then bg:Destroy() end
+    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then humanoid.PlatformStand = false end
+end
+
+local function toggleAntiFling(enabled)
+    antiFlingEnabled = enabled
+    if antiFlingConnection then antiFlingConnection:Disconnect() end
+    if antiFlingEnabled then
+        antiFlingConnection = RunService.Stepped:Connect(function()
+            if not antiFlingEnabled then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                    if part.Velocity.Magnitude > 60 or part.RotVelocity.Magnitude > 60 then
+                        part.Velocity, part.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- 自瞄鎖定邏輯
+local function getClosestPlayerToCursor()
+    local closestPlayer, shortestDistance = nil, math.huge
+    local mousePos = UserInputService:GetMouseLocation()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and not (aimbotTeamCheck and player.Team == LocalPlayer.Team) then
+            local character = player.Character
+            local part = character and character:FindFirstChild(aimbotPart)
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if part and humanoid and humanoid.Health > 0 then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        closestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+RunService.RenderStepped:Connect(function()
+    if aimbotEnabled and isAiming then
+        local target = getClosestPlayerToCursor()
+        local part = target and target.Character and target.Character:FindFirstChild(aimbotPart)
+        if part then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
+        end
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if aimbotEnabled and input.UserInputType == Enum.UserInputType.MouseButton2 then isAiming = true end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then isAiming = false end
+end)
+
+-- 透視圖層邏輯
+local function createESP(player)
+    if player == LocalPlayer or cache[player] then return end
+    local objects = {Box = Drawing.new("Square"), Tracer = Drawing.new("Line"), NameLabel = Drawing.new("Text"), HealthLabel = Drawing.new("Text")}
+    cache[player] = objects
+    objects.Box.Thickness, objects.Box.Filled, objects.Box.Color = 1.5, false, Color3.fromRGB(240, 84, 84)
+    objects.Tracer.Thickness, objects.Tracer.Color = 1, Color3.fromRGB(255, 255, 255)
+    for _, l in ipairs({objects.NameLabel, objects.HealthLabel}) do
+        l.Size, l.Center, l.Outline, l.OutlineColor, l.Color = 13, true, true, Color3.fromRGB(0,0,0), Color3.fromRGB(255,255,255)
+    end
+    objects.HealthLabel.Color = Color3.fromRGB(0, 255, 100)
+end
+
+RunService.RenderStepped:Connect(function()
+    for player, objs in pairs(cache) do
+        local character = player.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local head = character and character:FindFirstChild("Head")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local visible = false
+        if espMasterEnabled and character and root and head and humanoid and humanoid.Health > 0 then
+            if not (espTeamCheck and player.Team == LocalPlayer.Team) then
+                local hrpPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+                if onScreen then
+                    visible = true
+                    local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                    local legPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+                    local boxHeight = math.abs(headPos.Y - legPos.Y)
+                    local boxWidth = boxHeight * 0.6
+                    
+                    objs.Box.Visible = espBoxEnabled
+                    if espBoxEnabled then objs.Box.Size, objs.Box.Position = Vector2.new(boxWidth, boxHeight), Vector2.new(hrpPos.X - boxWidth / 2, hrpPos.Y - boxHeight / 2) end
+                    
+                    objs.Tracer.Visible = espTracerEnabled
+                    if espTracerEnabled then objs.Tracer.From, objs.Tracer.To = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y), Vector2.new(hrpPos.X, hrpPos.Y + (boxHeight / 2)) end
+                    
+                    local topY, botY = hrpPos.Y - (boxHeight / 2) - 16, hrpPos.Y + (boxHeight / 2) + 2
+                    objs.NameLabel.Visible = espNameEnabled if espNameEnabled then objs.NameLabel.Text, objs.NameLabel.Position = player.DisplayName or player.Name, Vector2.new(hrpPos.X, topY) end
+                    objs.HealthLabel.Visible = espHealthEnabled if espHealthEnabled then objs.HealthLabel.Text, objs.HealthLabel.Position = string.format("HP: %d", humanoid.Health), Vector2.new(hrpPos.X, botY) end
+                end
+            end
+        end
+        if not visible then pcall(function() for _, o in pairs(objs) do o.Visible = false end end) end
+    end
+end)
+for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
+Players.PlayerAdded:Connect(createESP)
+
+-- ==========================================
+-- 4. 裝配與佈局分頁
+-- ==========================================
+local MainTab = Window:NewTab("⚡ 首頁快捷")
+local AimTab = Window:NewTab("🎯 戰鬥自瞄")
+local VisualTab = Window:NewTab("👁️ 視覺透視")
+
+local MainSection = MainTab:NewSection("玩家與移動配置")
+local AimSection = AimTab:NewSection("自瞄輔助")
+local VisualSection = VisualTab:NewSection("透視渲染")
+
+-- 首頁快捷
+MainSection:NewToggle("開啟飛行 (Fly)", "", function(state) flying = state if flying then startFlying() else stopFlying() end end)
+MainSection:NewSlider("飛行速度設定", "", 200, 20, function(v) flySpeed = v end)
+MainSection:NewToggle("🛡️ 反彈飛保護 (Anti-Fling)", "", function(state) toggleAntiFling(state) end)
+
+-- 【新增功能：精準手動輸入速度】
+MainSection:NewTextBox("精準設定移動速度 (WalkSpeed)", "輸入任意數字後按 Enter", function(text)
+    local num = tonumber(text)
+    if num and LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.WalkSpeed = num end
+    end
+end)
+
+MainSection:NewSlider("移動速度調速桿 (WalkSpeed)", "", 250, 16, function(v) if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = v end end)
+MainSection:NewSlider("跳躍高度設定 (JumpPower)", "", 300, 50, function(v) if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = v end end)
+
+-- 戰鬥自瞄
+AimSection:NewToggle("啟用右鍵自動鎖定", "", function(state) aimbotEnabled = state end)
+AimSection:NewDropdown("鎖定部位", "", {"頭部", "身體"}, function(c) aimbotPart = (c == "身體") and "HumanoidRootPart" or "Head" end)
+
+-- 視覺透視
+VisualSection:NewToggle("全球玩家透視總開關", "", function(state) espMasterEnabled = state end)
+VisualSection:NewToggle("2D 方框顯示", "", function(state) espBoxEnabled = state end)
+VisualSection:NewToggle("玩家名稱顯示", "", function(state) espNameEnabled = state end)
+VisualSection:NewToggle("動態血量條", "", function(state) espHealthEnabled = state end)
+VisualSection:NewToggle("追蹤導引線", "", function(state) espTracerEnabled = state end)
+
+-- ==========================================
+-- 5. 雙快捷鍵偵聽綁定 (K 鍵與 Insert 鍵)
+-- ==========================================
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.K or input.KeyCode == Enum.KeyCode.Insert then 
+        Window:ToggleUI() 
+    end
+end)
+
+print("🔥 Yielding Hub 優化版載入成功！現在按 K 或 Insert 即可切換選單。")
