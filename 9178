@@ -1,0 +1,786 @@
+-- ========== 極簡 UI (全黑色風格 + Rivals 修改開關) ==========
+assert(hookmetamethod, "Your executor doesn't support hookmetamethod.")
+
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+-- ============================================
+-- Roblox Rivals 修改 (近戰冷卻移除)
+-- ============================================
+local rivalsModEnabled = false
+local rivalsItems = nil
+local originalValues = {}  -- 儲存原始數值以便還原
+
+local function applyRivalsMod()
+    if not rivalsModEnabled then return end
+    
+    if game.GameId == 6035872082 or game.PlaceId == 17618583907 then
+        local Storage = game:GetService("ReplicatedStorage")
+        local itemLibrary = Storage:FindFirstChild("Modules")
+        if itemLibrary then
+            rivalsItems = require(itemLibrary.ItemLibrary).Items
+            
+            for name, data in pairs(rivalsItems) do
+                if typeof(data) == "table" then
+                    -- 儲存原始數值
+                    if not originalValues[name] then
+                        originalValues[name] = {}
+                    end
+                    
+                    -- === 近戰恢復時間移除 ===
+                    if data.AttackCooldown then 
+                        originalValues[name].AttackCooldown = data.AttackCooldown
+                        data.AttackCooldown = 0.001 
+                    end
+                    if data.SwingCooldown then 
+                        originalValues[name].SwingCooldown = data.SwingCooldown
+                        data.SwingCooldown = 0.001 
+                    end
+                    if data.MeleeCooldown then 
+                        originalValues[name].MeleeCooldown = data.MeleeCooldown
+                        data.MeleeCooldown = 0.001 
+                    end
+                    if data.RecoveryTime then 
+                        originalValues[name].RecoveryTime = data.RecoveryTime
+                        data.RecoveryTime = 0.001 
+                    end
+                    
+                    -- === 投擲物即時投擲 ===
+                    if data.ThrowCooldown then 
+                        originalValues[name].ThrowCooldown = data.ThrowCooldown
+                        data.ThrowCooldown = 0.001 
+                    end
+                    if data.ActivationDelay then 
+                        originalValues[name].ActivationDelay = data.ActivationDelay
+                        data.ActivationDelay = 0.001 
+                    end
+                    if data.EquipDelay then 
+                        originalValues[name].EquipDelay = data.EquipDelay
+                        data.EquipDelay = 0.001 
+                    end
+                    if data.Cooldown then 
+                        originalValues[name].Cooldown = data.Cooldown
+                        data.Cooldown = 0.001 
+                    end
+                end
+            end
+            print("✅ Rivals 修改已套用")
+        end
+    end
+end
+
+local function removeRivalsMod()
+    if not rivalsItems then return end
+    
+    for name, data in pairs(rivalsItems) do
+        if typeof(data) == "table" and originalValues[name] then
+            if originalValues[name].AttackCooldown then data.AttackCooldown = originalValues[name].AttackCooldown end
+            if originalValues[name].SwingCooldown then data.SwingCooldown = originalValues[name].SwingCooldown end
+            if originalValues[name].MeleeCooldown then data.MeleeCooldown = originalValues[name].MeleeCooldown end
+            if originalValues[name].RecoveryTime then data.RecoveryTime = originalValues[name].RecoveryTime end
+            if originalValues[name].ThrowCooldown then data.ThrowCooldown = originalValues[name].ThrowCooldown end
+            if originalValues[name].ActivationDelay then data.ActivationDelay = originalValues[name].ActivationDelay end
+            if originalValues[name].EquipDelay then data.EquipDelay = originalValues[name].EquipDelay end
+            if originalValues[name].Cooldown then data.Cooldown = originalValues[name].Cooldown end
+        end
+    end
+    originalValues = {}
+    print("✅ Rivals 修改已移除")
+end
+
+-- ===== UI 控制變數 =====
+local uiLocked = false
+local uiVisible = true
+
+-- 創建主 UI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HackUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- ===== 懸浮按鈕容器 (固定在左上角，垂直排列) =====
+local floatingContainer = Instance.new("Frame")
+floatingContainer.Size = UDim2.new(0, 80, 0, 72)
+floatingContainer.Position = UDim2.new(0.01, 0, 0.02, 0)
+floatingContainer.BackgroundTransparency = 1
+floatingContainer.Parent = screenGui
+
+-- Toggle UI 懸浮按鈕 (上方)
+local toggleFloat = Instance.new("TextButton")
+toggleFloat.Size = UDim2.new(0, 80, 0, 32)
+toggleFloat.Position = UDim2.new(0, 0, 0, 0)
+toggleFloat.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+toggleFloat.BackgroundTransparency = 0
+toggleFloat.Text = "Toggle UI"
+toggleFloat.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleFloat.TextSize = 12
+toggleFloat.Font = Enum.Font.GothamSemibold
+toggleFloat.BorderSizePixel = 1
+toggleFloat.BorderColor3 = Color3.fromRGB(40, 40, 40)
+toggleFloat.Parent = floatingContainer
+Instance.new("UICorner", toggleFloat).CornerRadius = UDim.new(0, 8)
+
+-- Lock UI 懸浮按鈕 (下方)
+local lockFloat = Instance.new("TextButton")
+lockFloat.Size = UDim2.new(0, 80, 0, 32)
+lockFloat.Position = UDim2.new(0, 0, 0, 40)
+lockFloat.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+lockFloat.BackgroundTransparency = 0
+lockFloat.Text = "Lock UI"
+lockFloat.TextColor3 = Color3.fromRGB(255, 255, 255)
+lockFloat.TextSize = 12
+lockFloat.Font = Enum.Font.GothamSemibold
+lockFloat.BorderSizePixel = 1
+lockFloat.BorderColor3 = Color3.fromRGB(40, 40, 40)
+lockFloat.Parent = floatingContainer
+Instance.new("UICorner", lockFloat).CornerRadius = UDim.new(0, 8)
+
+-- ===== 主面板 (純黑色) =====
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 220, 0, 430)
+mainFrame.Position = UDim2.new(0.5, -110, 0.5, -215)
+mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+mainFrame.BackgroundTransparency = 0
+mainFrame.BorderSizePixel = 1
+mainFrame.BorderColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+
+-- ===== 標題 =====
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 35)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "迪克lua"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 16
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
+
+-- 標題下劃線
+local titleLine = Instance.new("Frame")
+titleLine.Size = UDim2.new(0.9, 0, 0, 1)
+titleLine.Position = UDim2.new(0.05, 0, 0.08, 0)
+titleLine.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+titleLine.BackgroundTransparency = 0
+titleLine.BorderSizePixel = 0
+titleLine.Parent = mainFrame
+
+-- ===== 功能列表 =====
+local function createMenuItem(parent, yPos, icon, text, color)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0, 40)
+    frame.Position = UDim2.new(0.05, 0, 0, yPos)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    frame.BackgroundTransparency = 0
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+    
+    local iconLabel = Instance.new("TextLabel")
+    iconLabel.Size = UDim2.new(0, 25, 1, 0)
+    iconLabel.Position = UDim2.new(0.05, 0, 0, 0)
+    iconLabel.BackgroundTransparency = 1
+    iconLabel.Text = icon
+    iconLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    iconLabel.TextSize = 18
+    iconLabel.Font = Enum.Font.GothamBold
+    iconLabel.TextXAlignment = Enum.TextXAlignment.Center
+    iconLabel.Parent = frame
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    textLabel.Position = UDim2.new(0.15, 0, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = text
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.TextSize = 14
+    textLabel.Font = Enum.Font.GothamSemibold
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Parent = frame
+    
+    -- 狀態開關
+    local toggle = Instance.new("Frame")
+    toggle.Size = UDim2.new(0, 40, 0, 22)
+    toggle.Position = UDim2.new(0.75, 0, 0.5, -11)
+    toggle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    toggle.BorderSizePixel = 0
+    toggle.Parent = frame
+    Instance.new("UICorner", toggle).CornerRadius = UDim.new(1, 0)
+    
+    local toggleDot = Instance.new("Frame")
+    toggleDot.Size = UDim2.new(0, 18, 0, 18)
+    toggleDot.Position = UDim2.new(0.04, 0, 0.5, -9)
+    toggleDot.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+    toggleDot.BorderSizePixel = 0
+    toggleDot.Parent = toggle
+    Instance.new("UICorner", toggleDot).CornerRadius = UDim.new(1, 0)
+    
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, 0, 1, 0)
+    button.Position = UDim2.new(0, 0, 0, 0)
+    button.BackgroundTransparency = 1
+    button.Text = ""
+    button.Parent = frame
+    
+    return frame, button, toggle, toggleDot
+end
+
+-- 亂飛
+local flyFrame, flyBtn, flyToggle, flyDot = createMenuItem(mainFrame, 40, "", "亂飛", Color3.fromRGB(15, 15, 15))
+
+-- 黏人
+local stickFrame, stickBtn, stickToggle, stickDot = createMenuItem(mainFrame, 88, "", "黏人", Color3.fromRGB(15, 15, 15))
+
+-- Rivals 修改 (新增)
+local rivalsFrame, rivalsBtn, rivalsToggle, rivalsDot = createMenuItem(mainFrame, 136, "", "Rivals 無冷卻", Color3.fromRGB(15, 15, 15))
+
+-- 傳送大廳
+local teleFrame, teleBtn, teleToggle, teleDot = createMenuItem(mainFrame, 184, "", "傳送大廳", Color3.fromRGB(15, 15, 15))
+
+-- ===== 玩家選擇器 =====
+local playerSelector = Instance.new("Frame")
+playerSelector.Size = UDim2.new(0.9, 0, 0, 30)
+playerSelector.Position = UDim2.new(0.05, 0, 0, 235)
+playerSelector.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+playerSelector.BackgroundTransparency = 0
+playerSelector.BorderSizePixel = 0
+playerSelector.Parent = mainFrame
+playerSelector.Visible = false
+Instance.new("UICorner", playerSelector).CornerRadius = UDim.new(0, 6)
+
+local selectorLabel = Instance.new("TextLabel")
+selectorLabel.Size = UDim2.new(0.3, 0, 1, 0)
+selectorLabel.Position = UDim2.new(0.05, 0, 0, 0)
+selectorLabel.BackgroundTransparency = 1
+selectorLabel.Text = "目標:"
+selectorLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+selectorLabel.TextSize = 12
+selectorLabel.Font = Enum.Font.GothamSemibold
+selectorLabel.TextXAlignment = Enum.TextXAlignment.Left
+selectorLabel.Parent = playerSelector
+
+local targetName = Instance.new("TextLabel")
+targetName.Size = UDim2.new(0.5, 0, 1, 0)
+targetName.Position = UDim2.new(0.3, 0, 0, 0)
+targetName.BackgroundTransparency = 1
+targetName.Text = "無"
+targetName.TextColor3 = Color3.fromRGB(200, 200, 200)
+targetName.TextSize = 12
+targetName.Font = Enum.Font.GothamSemibold
+targetName.TextXAlignment = Enum.TextXAlignment.Left
+targetName.Parent = playerSelector
+
+local selectBtn = Instance.new("TextButton")
+selectBtn.Size = UDim2.new(0, 30, 0, 22)
+selectBtn.Position = UDim2.new(0.82, 0, 0.5, -11)
+selectBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+selectBtn.BackgroundTransparency = 0
+selectBtn.Text = "↻"
+selectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+selectBtn.TextSize = 14
+selectBtn.Font = Enum.Font.GothamBold
+selectBtn.BorderSizePixel = 0
+selectBtn.Parent = playerSelector
+Instance.new("UICorner", selectBtn).CornerRadius = UDim.new(0, 6)
+
+-- ===== Y軸顯示 =====
+local yFrame = Instance.new("Frame")
+yFrame.Size = UDim2.new(0.9, 0, 0, 30)
+yFrame.Position = UDim2.new(0.05, 0, 0, 285)
+yFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+yFrame.BackgroundTransparency = 0
+yFrame.BorderSizePixel = 0
+yFrame.Parent = mainFrame
+Instance.new("UICorner", yFrame).CornerRadius = UDim.new(0, 6)
+
+local yLabel = Instance.new("TextLabel")
+yLabel.Size = UDim2.new(1, 0, 1, 0)
+yLabel.Position = UDim2.new(0, 0, 0, 0)
+yLabel.BackgroundTransparency = 1
+yLabel.Text = "Y: 4002"
+yLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+yLabel.TextSize = 16
+yLabel.Font = Enum.Font.GothamBold
+yLabel.Parent = yFrame
+
+-- ===== 底部狀態 =====
+local statusFrame = Instance.new("Frame")
+statusFrame.Size = UDim2.new(0.9, 0, 0, 25)
+statusFrame.Position = UDim2.new(0.05, 0, 0.87, 0)
+statusFrame.BackgroundTransparency = 1
+statusFrame.Parent = mainFrame
+
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 8, 0, 8)
+statusDot.Position = UDim2.new(0, 0, 0.5, -4)
+statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+statusDot.BorderSizePixel = 0
+statusDot.Parent = statusFrame
+Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -15, 1, 0)
+statusLabel.Position = UDim2.new(0, 15, 0, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "系統就緒"
+statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+statusLabel.TextSize = 12
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = statusFrame
+
+-- ===== 更新開關 =====
+local function updateToggle(toggle, dot, enabled, color)
+    if enabled then
+        TweenService:Create(toggle, TweenInfo.new(0.3), {BackgroundColor3 = color}):Play()
+        TweenService:Create(dot, TweenInfo.new(0.3), {Position = UDim2.new(0.52, 0, 0.5, -9)}):Play()
+        TweenService:Create(dot, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    else
+        TweenService:Create(toggle, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}):Play()
+        TweenService:Create(dot, TweenInfo.new(0.3), {Position = UDim2.new(0.04, 0, 0.5, -9)}):Play()
+        TweenService:Create(dot, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+    end
+end
+
+-- ===== 懸浮按鈕懸停效果 =====
+local function setupFloatHover(button)
+    button.MouseEnter:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.15), {
+            BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+            Size = UDim2.new(0, 84, 0, 34)
+        }):Play()
+    end)
+    button.MouseLeave:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.15), {
+            BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+            Size = UDim2.new(0, 80, 0, 32)
+        }):Play()
+    end)
+end
+
+setupFloatHover(toggleFloat)
+setupFloatHover(lockFloat)
+
+-- ===== 亂飛邏輯 =====
+local flyEnabled = false
+local lastPos = nil
+local flip = true
+local START_NUMBER = 284719334
+local fakeY = START_NUMBER
+local SPAM_SPEED = 1420583
+
+task.spawn(function()
+    while true do
+        if flyEnabled then
+            fakeY = fakeY + math.random(SPAM_SPEED - 5000, SPAM_SPEED + 5000)
+            yLabel.Text = "Y: " .. string.format("%.0f", fakeY)
+        else
+            yLabel.Text = "Y: 4002"
+        end
+        task.wait(0.05)
+    end
+end)
+
+flyBtn.MouseButton1Click:Connect(function()
+    flyEnabled = not flyEnabled
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+    if flyEnabled then
+        fakeY = START_NUMBER
+        updateToggle(flyToggle, flyDot, true, Color3.fromRGB(60, 60, 60))
+        statusLabel.Text = "亂飛已啟動"
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+        statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
+        if hrp then lastPos = hrp.CFrame end
+
+        task.spawn(function()
+            while flyEnabled do
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    for i = 1, 50 do
+                        hrp.CFrame = flip and CFrame.new(0, 1e16, 0) or CFrame.new(0, -1e16, 0)
+                        flip = not flip
+                    end
+                end
+                task.wait()
+            end
+        end)
+    else
+        updateToggle(flyToggle, flyDot, false)
+        statusLabel.Text = "系統就緒"
+        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+        statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and lastPos then 
+            hrp.CFrame = lastPos 
+        end
+    end
+end)
+
+-- ===== 黏人邏輯 =====
+local stickEnabled = false
+local targetPlayer = nil
+local stickConnection = nil
+local stickLastPos = nil
+
+local function getPlayerList()
+    local list = {}
+    for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(list, p)
+        end
+    end
+    return list
+end
+
+local function selectNextTarget()
+    local players = getPlayerList()
+    if #players == 0 then
+        targetName.Text = "無"
+        targetPlayer = nil
+        statusLabel.Text = "沒有可黏的玩家"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        return
+    end
+    
+    local found = false
+    for i, p in pairs(players) do
+        if targetPlayer == p then
+            if i < #players then
+                targetPlayer = players[i + 1]
+            else
+                targetPlayer = players[1]
+            end
+            found = true
+            break
+        end
+    end
+    
+    if not found then
+        targetPlayer = players[1]
+    end
+    
+    targetName.Text = targetPlayer.Name
+    statusLabel.Text = "目標: " .. targetPlayer.Name
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+end
+
+local function startStick()
+    if stickConnection then
+        stickConnection:Disconnect()
+        stickConnection = nil
+    end
+    
+    stickConnection = RunService.Heartbeat:Connect(function()
+        if not stickEnabled or not targetPlayer then return end
+        
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local targetChar = targetPlayer.Character
+        local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+        
+        if hrp and targetHrp then
+            hrp.CFrame = targetHrp.CFrame
+        end
+    end)
+end
+
+stickBtn.MouseButton1Click:Connect(function()
+    stickEnabled = not stickEnabled
+    
+    if stickEnabled then
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            stickLastPos = hrp.CFrame
+        end
+        
+        updateToggle(stickToggle, stickDot, true, Color3.fromRGB(60, 60, 60))
+        playerSelector.Visible = true
+        selectNextTarget()
+        startStick()
+        statusLabel.Text = "黏人已啟動"
+        statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        statusDot.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    else
+        updateToggle(stickToggle, stickDot, false)
+        playerSelector.Visible = false
+        
+        if stickConnection then
+            stickConnection:Disconnect()
+            stickConnection = nil
+        end
+        
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and stickLastPos then
+            hrp.CFrame = stickLastPos
+        end
+        
+        targetPlayer = nil
+        targetName.Text = "無"
+        statusLabel.Text = "黏人已關閉"
+        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+        statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        stickLastPos = nil
+    end
+end)
+
+selectBtn.MouseButton1Click:Connect(function()
+    if stickEnabled then
+        selectNextTarget()
+        if stickConnection then
+            stickConnection:Disconnect()
+            stickConnection = nil
+        end
+        startStick()
+    end
+end)
+
+-- ===== Rivals 修改功能 =====
+rivalsBtn.MouseButton1Click:Connect(function()
+    rivalsModEnabled = not rivalsModEnabled
+    
+    if rivalsModEnabled then
+        -- 檢查是否在 Rivals 遊戲中
+        if game.GameId == 6035872082 or game.PlaceId == 17618583907 then
+            applyRivalsMod()
+            updateToggle(rivalsToggle, rivalsDot, true, Color3.fromRGB(60, 60, 60))
+            statusLabel.Text = "Rivals 無冷卻已啟用"
+            statusLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+            statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
+        else
+            statusLabel.Text = "❌ 請在 Rivals 遊戲中使用"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            statusDot.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+            rivalsModEnabled = false
+            wait(1.5)
+            statusLabel.Text = "系統就緒"
+            statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+            statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        end
+    else
+        removeRivalsMod()
+        updateToggle(rivalsToggle, rivalsDot, false)
+        statusLabel.Text = "Rivals 無冷卻已關閉"
+        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+        statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        wait(0.5)
+        statusLabel.Text = "系統就緒"
+        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    end
+end)
+
+-- ===== 傳送大廳 =====
+teleBtn.MouseButton1Click:Connect(function()
+    statusLabel.Text = "傳送中..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255, 255, 100)
+    
+    local lobbyFound = false
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    for _, obj in pairs(game:GetService("Workspace"):GetChildren()) do
+        if obj:IsA("BasePart") and (
+            string.lower(obj.Name):find("lobby") or 
+            string.lower(obj.Name):find("spawn") or 
+            string.lower(obj.Name):find("start") or
+            string.lower(obj.Name):find("hub")
+        ) then
+            if hrp then
+                hrp.CFrame = obj.CFrame + Vector3.new(0, 5, 0)
+                lobbyFound = true
+                break
+            end
+        end
+    end
+    
+    if not lobbyFound and hrp then
+        hrp.CFrame = CFrame.new(0, 10, 0)
+        statusLabel.Text = "已傳送到 (0, 10, 0)"
+    elseif lobbyFound then
+        statusLabel.Text = "已傳送到大廳"
+    end
+    
+    wait(1)
+    statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+    wait(0.5)
+    statusLabel.Text = "系統就緒"
+end)
+
+-- ===== Toggle UI 功能 =====
+local savedPosition = nil
+
+toggleFloat.MouseButton1Click:Connect(function()
+    uiVisible = not uiVisible
+    
+    if uiVisible then
+        mainFrame.Visible = true
+        local targetPos = savedPosition or UDim2.new(0.5, -110, 0.5, -215)
+        TweenService:Create(mainFrame, TweenInfo.new(0.3), {
+            Position = targetPos,
+            BackgroundTransparency = 0,
+            Size = UDim2.new(0, 220, 0, 430)
+        }):Play()
+        toggleFloat.Text = "Toggle UI"
+        toggleFloat.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        statusLabel.Text = "UI 已顯示"
+        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+        wait(0.5)
+        statusLabel.Text = "系統就緒"
+        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    else
+        savedPosition = mainFrame.Position
+        TweenService:Create(mainFrame, TweenInfo.new(0.2), {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 200, 0, 350)
+        }):Play()
+        task.wait(0.2)
+        mainFrame.Visible = false
+        toggleFloat.Text = "Toggle UI"
+        toggleFloat.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        statusLabel.Text = "UI 已隱藏"
+        statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    end
+end)
+
+-- ===== Lock UI 功能 =====
+lockFloat.MouseButton1Click:Connect(function()
+    uiLocked = not uiLocked
+    
+    if uiLocked then
+        lockFloat.Text = "Lock UI"
+        lockFloat.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        statusLabel.Text = "UI 已鎖定"
+        statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    else
+        lockFloat.Text = "Lock UI"
+        lockFloat.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        statusLabel.Text = "UI 已解鎖"
+        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+        wait(0.5)
+        statusLabel.Text = "系統就緒"
+        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    end
+end)
+
+-- ===== 熱鍵 =====
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.V then
+        flyBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.B then
+        stickBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.R then
+        rivalsBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.T then
+        teleBtn.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.X then
+        toggleFloat.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.L then
+        lockFloat.MouseButton1Click:Fire()
+    elseif input.KeyCode == Enum.KeyCode.RightShift or input.KeyCode == Enum.KeyCode.R then
+        if stickEnabled then
+            selectBtn.MouseButton1Click:Fire()
+        end
+    end
+end)
+
+-- ===== 角色重生 =====
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+    
+    if flyEnabled then
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then lastPos = hrp.CFrame end
+    end
+    
+    if stickEnabled then
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            stickLastPos = hrp.CFrame
+        end
+        if stickConnection then
+            stickConnection:Disconnect()
+            stickConnection = nil
+        end
+        startStick()
+    end
+end)
+
+-- ===== 玩家離開時清理 =====
+game:GetService("Players").PlayerRemoving:Connect(function(p)
+    if targetPlayer == p then
+        targetPlayer = nil
+        targetName.Text = "無"
+        if stickEnabled then
+            selectNextTarget()
+            if stickConnection then
+                stickConnection:Disconnect()
+                stickConnection = nil
+            end
+            startStick()
+        end
+    end
+end)
+
+-- ===== 入場動畫 =====
+mainFrame.BackgroundTransparency = 1
+mainFrame.Size = UDim2.new(0, 200, 0, 350)
+
+task.wait(0.1)
+TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Position = UDim2.new(0.5, -110, 0.5, -215),
+    BackgroundTransparency = 0,
+    Size = UDim2.new(0, 220, 0, 430)
+}):Play()
+
+-- ===== 拖動功能 =====
+local dragData = {dragging = false, offset = nil}
+
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and not uiLocked and uiVisible then
+        dragData.dragging = true
+        dragData.offset = Vector2.new(
+            input.Position.X - mainFrame.AbsolutePosition.X,
+            input.Position.Y - mainFrame.AbsolutePosition.Y
+        )
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragData.dragging = false
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if dragData.dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        mainFrame.Position = UDim2.new(
+            0,
+            input.Position.X - dragData.offset.X,
+            0,
+            input.Position.Y - dragData.offset.Y
+        )
+    end
+end)
+
+print("✅ UI 已載入！")
+print("📌 熱鍵:")
+print("  [V] 亂飛  [B] 黏人  [T] 傳送大廳")
+print("  [R] Rivals 無冷卻  [X] 顯示/隱藏面板")
+print("  [L] 鎖定/解鎖 UI  [Shift+R] 切換黏人目標")
