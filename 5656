@@ -1,0 +1,68 @@
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+if _G.__SellHotkeyConn then _G.__SellHotkeyConn:Disconnect() end
+if _G.__Point2HotkeyConn then _G.__Point2HotkeyConn:Disconnect() end
+if _G.__Point3HotkeyConn then _G.__Point3HotkeyConn:Disconnect() end
+
+local A = Vector3.new(267.437, 52.428, 305.060)   -- 賣東西 (Q)
+local B = Vector3.new(859.503, 52.297, -714.444)  -- 點2   (])
+local C = Vector3.new(674.020, 52.566, -440.933)  -- 點3   (')
+
+-- 每幀強壓位置 + 期間 noclip 穿牆,持續 HOLD_TIME 秒
+local HOLD_TIME   = 2.5   -- 維持秒數（撐夠久讓伺服器接受新位置）
+local STICK_RANGE = 20    -- 距離目標多近視為成功
+
+local function fastTp(target, label)
+	local char = Players.LocalPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	-- noclip：暫時關閉所有部件碰撞
+	local savedCollide = {}
+	for _, p in ipairs(char:GetDescendants()) do
+		if p:IsA("BasePart") then
+			savedCollide[p] = p.CanCollide
+			p.CanCollide = false
+		end
+	end
+
+	local cf = CFrame.new(target)
+	local t0 = os.clock()
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		if not hrp.Parent then conn:Disconnect(); return end
+		hrp.CFrame = cf
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		-- 保持 noclip
+		for _, p in ipairs(char:GetDescendants()) do
+			if p:IsA("BasePart") then p.CanCollide = false end
+		end
+		if os.clock() - t0 >= HOLD_TIME then
+			conn:Disconnect()
+			-- 還原碰撞
+			for p, v in pairs(savedCollide) do
+				if p.Parent then p.CanCollide = v end
+			end
+			local ok = (hrp.Position - target).Magnitude < STICK_RANGE
+			print("[傳送]", label, ok and "成功" or "被拉回")
+		end
+	end)
+end
+
+local spamTp = fastTp
+
+_G.__SellHotkeyConn = UIS.InputBegan:Connect(function(i, p)
+if i.KeyCode == Enum.KeyCode.Q then spamTp(A, "賣東西") end
+end)
+
+_G.__Point2HotkeyConn = UIS.InputBegan:Connect(function(i, p)
+if i.KeyCode == Enum.KeyCode.RightBracket then spamTp(B, "點2") end
+end)
+
+_G.__Point3HotkeyConn = UIS.InputBegan:Connect(function(i, p)
+if i.KeyCode == Enum.KeyCode.Quote then spamTp(C, "點3") end
+end)
+
+print("[傳送] 已綁定 (Q=賣東西, ]=點2, '=點3)")
