@@ -76,32 +76,65 @@ pcall(function()
     end
 end)
 
--- 套 victim 外觀 --
+-- 套 victim 外觀 (含頭、臉、身體) --
 local function applyAppearance()
     local plr = Players:FindFirstChild(decodedData.name)
     if not plr or not plr.Character then return end
+    local char = plr.Character
 
     local ok, appearance = pcall(function()
         return Players:GetCharacterAppearanceAsync(decodedData.id)
     end)
     if not ok or not appearance then return end
 
-    for _, v in ipairs(plr.Character:GetChildren()) do
-        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") then
+    -- 清掉舊的:配件、衣服、體色、CharacterMesh(R6 身體 mesh) --
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants")
+           or v:IsA("BodyColors") or v:IsA("CharacterMesh") or v:IsA("ShirtGraphic") then
             v:Destroy()
         end
     end
-    for _, v in ipairs(appearance:GetChildren()) do
-        if v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") then
-            v.Parent = plr.Character
-        elseif v:IsA("Accessory") then
-            plr.Character.Humanoid:AddAccessory(v)
+
+    -- 清掉頭上的臉 Decal 和 SpecialMesh --
+    local head = char:FindFirstChild("Head")
+    if head then
+        for _, v in ipairs(head:GetChildren()) do
+            if v:IsA("Decal") or v:IsA("SpecialMesh") then
+                v:Destroy()
+            end
         end
     end
 
-    local parent = plr.Character.Parent
-    plr.Character.Parent = nil
-    plr.Character.Parent = parent
+    -- 套用新的 --
+    for _, v in ipairs(appearance:GetChildren()) do
+        if v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic")
+           or v:IsA("BodyColors") or v:IsA("CharacterMesh") then
+            v.Parent = char
+        elseif v:IsA("Accessory") then
+            pcall(function() char.Humanoid:AddAccessory(v) end)
+        elseif v:IsA("Decal") then
+            -- 臉 Decal --
+            if head then v.Parent = head end
+        elseif v:IsA("SpecialMesh") or v:IsA("DataModelMesh") then
+            -- 頭型 mesh (R6) --
+            if head then v.Parent = head end
+        elseif v:IsA("BodyPartAccessory") then
+            pcall(function() char.Humanoid:AddAccessory(v) end)
+        end
+    end
+
+    -- 套 HumanoidDescription (R15 身體 / 臉 / 頭 更完整) --
+    pcall(function()
+        local desc = Players:GetHumanoidDescriptionFromUserId(decodedData.id)
+        if desc and char:FindFirstChildOfClass("Humanoid") then
+            char.Humanoid:ApplyDescription(desc)
+        end
+    end)
+
+    -- 強制重繪 --
+    local parent = char.Parent
+    char.Parent = nil
+    char.Parent = parent
 end
 applyAppearance()
 spoofedPlayer.CharacterAdded:Connect(function()
