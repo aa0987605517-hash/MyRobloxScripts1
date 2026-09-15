@@ -1,13 +1,8 @@
--- Universal Player Spoof --
+-- Universal Player Spoof (hit-safe) --
 
-if type(getgenv) ~= "function" then
-    error("此 executor 不支援 getgenv")
-end
-
+if type(getgenv) ~= "function" then error("此 executor 不支援 getgenv") end
 local cfg = getgenv().Config
-if type(cfg) ~= "table" then
-    error("找不到 getgenv().Config,請先設定 config")
-end
+if type(cfg) ~= "table" then error("找不到 getgenv().Config") end
 
 local victim   = cfg.victim
 local helper   = cfg.helper or ""
@@ -25,10 +20,10 @@ repeat task.wait() until game:IsLoaded()
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
 
-local target = (helper ~= "")
-    and Players:WaitForChild(helper)
-    or Players.LocalPlayer
+local target = (helper ~= "") and Players:WaitForChild(helper) or LocalPlayer
+local isSelf = (target == LocalPlayer)   -- 冒充自己 = true;冒充小號 = false
 
 -- 抓 victim 資料 --
 local function fetchUser(id)
@@ -42,55 +37,58 @@ local function fetchUser(id)
     end
     error("此 executor 沒有 HttpGet 或 request")
 end
-
 local decodedData = HttpService:JSONDecode(fetchUser(victim))
 
 -- 改身分 --
-target.Name = decodedData.name
-target.UserId = decodedData.id
+-- 冒充自己時:只改 DisplayName 和 CharacterAppearanceId (不會弄壞打人)
+-- 冒充小號時:全部都改 (小號本來就不用打人)
+if not isSelf then
+    target.Name = decodedData.name
+    target.UserId = decodedData.id
+end
 target.CharacterAppearanceId = decodedData.id
 target.DisplayName = decodedData.displayName
 
 repeat task.wait() until target.Character
 target.Character:WaitForChild("Humanoid")
-target.Character.Name = decodedData.name
+if not isSelf then
+    target.Character.Name = decodedData.name  -- 冒充自己時不改!會破壞命中判定
+end
 target.Character.Humanoid.DisplayName = decodedData.displayName
 
-local spoofedPlayer = Players:WaitForChild(decodedData.name)
+-- spoofedPlayer:如果是自己模式就直接用 LocalPlayer (Name 沒改) --
+local spoofedPlayer = isSelf and LocalPlayer or Players:WaitForChild(decodedData.name)
 
--- 通用等級/連勝/ELO 屬性 (遊戲有讀就會生效,沒讀也無害) --
+-- 通用屬性 --
 if level  > 0 then spoofedPlayer:SetAttribute("Level", level)  end
 if streak > 0 then spoofedPlayer:SetAttribute("StatisticDuelsWinStreak", streak) end
-if streak > 0 then spoofedPlayer:SetAttribute("WinStreak", streak) end     -- 常見別名
+if streak > 0 then spoofedPlayer:SetAttribute("WinStreak", streak) end
 if elo    > 0 then spoofedPlayer:SetAttribute("DisplayELO", elo) end
-if elo    > 0 then spoofedPlayer:SetAttribute("ELO", elo) end               -- 常見別名
+if elo    > 0 then spoofedPlayer:SetAttribute("ELO", elo) end
 
--- 若遊戲有 CustomLeaderstats 這種結構就順便寫進去 --
 pcall(function()
     local lb = spoofedPlayer:FindFirstChild("CustomLeaderstats") or spoofedPlayer:FindFirstChild("leaderstats")
     if lb then
-        if lb:FindFirstChild("Level")     and level  > 0 then lb.Level.Value = level end
+        if lb:FindFirstChild("Level")      and level  > 0 then lb.Level.Value = level end
         if lb:FindFirstChild("Win Streak") and streak > 0 then lb["Win Streak"].Value = streak end
         if lb:FindFirstChild("WinStreak")  and streak > 0 then lb.WinStreak.Value = streak end
         if lb:FindFirstChild("ELO")        and elo    > 0 then lb.ELO.Value = elo end
     end
 end)
 
--- 套 victim 外觀 (以 HumanoidDescription 為主) --
+-- 套外觀 (ApplyDescription 為主) --
 local function applyAppearance()
-    local plr = Players:FindFirstChild(decodedData.name)
+    local plr = spoofedPlayer
     if not plr or not plr.Character then return end
     local char = plr.Character
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
 
-    -- 主方法:HumanoidDescription (臉、身體、頭型、膚色、衣服、配件全包) --
     local descOk = pcall(function()
         local desc = Players:GetHumanoidDescriptionFromUserId(decodedData.id)
         humanoid:ApplyDescription(desc)
     end)
 
-    -- 備用:如果 ApplyDescription 失敗,手動用 GetCharacterAppearanceAsync --
     if not descOk then
         local ok, appearance = pcall(function()
             return Players:GetCharacterAppearanceAsync(decodedData.id)
@@ -106,9 +104,7 @@ local function applyAppearance()
         local head = char:FindFirstChild("Head")
         if head then
             for _, v in ipairs(head:GetChildren()) do
-                if v:IsA("Decal") or v:IsA("SpecialMesh") then
-                    v:Destroy()
-                end
+                if v:IsA("Decal") or v:IsA("SpecialMesh") then v:Destroy() end
             end
         end
         for _, v in ipairs(appearance:GetChildren()) do
@@ -125,20 +121,43 @@ local function applyAppearance()
         end
     end
 
-    -- 強制重繪 --
     local parent = char.Parent
     char.Parent = nil
     char.Parent = parent
 end
 applyAppearance()
-spoofedPlayer.CharacterAdded:Connect(function()
-    task.wait(0.2)
-    applyAppearance()
+spoofedPlayer.CharacterAdded:Connect(function() task.wait(0.2); applyAppearance() end)
+
+-- HumanoidDescription 快取 + 快速重套 --
+local cachedDesc
+task.spawn(function()
+    local ok, d = pcall(function()
+        return Players:GetHumanoidDescriptionFromUserId(decodedData.id)
+    end)
+    if ok then cachedDesc = d end
+end)
+local function fastReapply()
+    if not spoofedPlayer.Character or not cachedDesc then return end
+    local h = spoofedPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if h then pcall(function() h:ApplyDescription(cachedDesc) end) end
+end
+
+local function hookCharacter(char)
+    local head = char:WaitForChild("Head", 5)
+    if head then
+        head.ChildAdded:Connect(function() task.wait(0.05); fastReapply() end)
+        head.ChildRemoved:Connect(function() task.wait(0.05); fastReapply() end)
+    end
+end
+if spoofedPlayer.Character then hookCharacter(spoofedPlayer.Character) end
+spoofedPlayer.CharacterAdded:Connect(hookCharacter)
+
+task.spawn(function()
+    while task.wait(2) do fastReapply() end
 end)
 
--- Metatable hook:Premium / 驗證徽章 / 平台 --
+-- Metatable hook:Premium / 驗證 / 平台 / (自己模式下)假 Name+DisplayName --
 if type(hookmetamethod) == "function" then
-    -- 平台 → UserInputService 屬性對照 --
     local platformProps = {
         DESKTOP = { KeyboardEnabled = true,  MouseEnabled = true,  TouchEnabled = false, GamepadEnabled = false, VREnabled = false },
         MOBILE  = { KeyboardEnabled = false, MouseEnabled = false, TouchEnabled = true,  GamepadEnabled = false, VREnabled = false },
@@ -156,6 +175,7 @@ if type(hookmetamethod) == "function" then
             if key == "HasVerifiedBadge" and verified then
                 return true
             end
+            -- 注意:Name / UserId 不 hook,避免影響命中判定和 remote event 送出
         end
         if platformOverrides and self == UserInputService and platformOverrides[key] ~= nil then
             return platformOverrides[key]
@@ -164,6 +184,10 @@ if type(hookmetamethod) == "function" then
     end)
 else
     if premium or verified or platform then
-        warn("[Spoof] 此 executor 不支援 hookmetamethod,無法偽造 Premium/驗證/平台")
+        warn("[Spoof] 此 executor 不支援 hookmetamethod")
     end
+end
+
+if isSelf then
+    warn("[Spoof] 冒充自己模式:Name/UserId 保留原本,以維持命中判定正常。UI 上會顯示 DisplayName 為 " .. decodedData.displayName)
 end
