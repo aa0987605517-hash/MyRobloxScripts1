@@ -1,34 +1,36 @@
--- Universal Player Spoof (safe version) --
+-- Universal Player Spoof --
 
--- 檢查 executor 是否支援必要 API --
 if type(getgenv) ~= "function" then
-    error("此 executor 不支援 getgenv,無法使用本腳本")
+    error("此 executor 不支援 getgenv")
 end
 
 local cfg = getgenv().Config
 if type(cfg) ~= "table" then
-    error("找不到 getgenv().Config,請先設定 config 再執行腳本")
+    error("找不到 getgenv().Config,請先設定 config")
 end
 
 local victim   = cfg.victim
 local helper   = cfg.helper or ""
+local level    = tonumber(cfg.level)  or 0
+local streak   = tonumber(cfg.streak) or 0
+local elo      = tonumber(cfg.elo)    or 0
 local premium  = cfg.premium
 local verified = cfg.verified
+local platform = cfg.platform and tostring(cfg.platform):upper() or nil
 
-if not victim then
-    error("Config.victim 未設定 (要冒充的 UserId)")
-end
+if not victim then error("Config.victim 未設定") end
 
 repeat task.wait() until game:IsLoaded()
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
 
 local target = (helper ~= "")
     and Players:WaitForChild(helper)
     or Players.LocalPlayer
 
--- 抓 victim 資料 (executor 沒 HttpGet 就用 request) --
+-- 抓 victim 資料 --
 local function fetchUser(id)
     if type(game.HttpGet) == "function" then
         return game:HttpGet("https://users.roblox.com/v1/users/" .. tostring(id), true)
@@ -38,12 +40,12 @@ local function fetchUser(id)
         local res = rq({ Url = "https://users.roblox.com/v1/users/" .. tostring(id), Method = "GET" })
         return res.Body or res.body
     end
-    error("此 executor 沒有 HttpGet 或 request 函式")
+    error("此 executor 沒有 HttpGet 或 request")
 end
 
 local decodedData = HttpService:JSONDecode(fetchUser(victim))
 
--- 改基本身分 --
+-- 改身分 --
 target.Name = decodedData.name
 target.UserId = decodedData.id
 target.CharacterAppearanceId = decodedData.id
@@ -55,6 +57,24 @@ target.Character.Name = decodedData.name
 target.Character.Humanoid.DisplayName = decodedData.displayName
 
 local spoofedPlayer = Players:WaitForChild(decodedData.name)
+
+-- 通用等級/連勝/ELO 屬性 (遊戲有讀就會生效,沒讀也無害) --
+if level  > 0 then spoofedPlayer:SetAttribute("Level", level)  end
+if streak > 0 then spoofedPlayer:SetAttribute("StatisticDuelsWinStreak", streak) end
+if streak > 0 then spoofedPlayer:SetAttribute("WinStreak", streak) end     -- 常見別名
+if elo    > 0 then spoofedPlayer:SetAttribute("DisplayELO", elo) end
+if elo    > 0 then spoofedPlayer:SetAttribute("ELO", elo) end               -- 常見別名
+
+-- 若遊戲有 CustomLeaderstats 這種結構就順便寫進去 --
+pcall(function()
+    local lb = spoofedPlayer:FindFirstChild("CustomLeaderstats") or spoofedPlayer:FindFirstChild("leaderstats")
+    if lb then
+        if lb:FindFirstChild("Level")     and level  > 0 then lb.Level.Value = level end
+        if lb:FindFirstChild("Win Streak") and streak > 0 then lb["Win Streak"].Value = streak end
+        if lb:FindFirstChild("WinStreak")  and streak > 0 then lb.WinStreak.Value = streak end
+        if lb:FindFirstChild("ELO")        and elo    > 0 then lb.ELO.Value = elo end
+    end
+end)
 
 -- 套 victim 外觀 --
 local function applyAppearance()
@@ -83,15 +103,23 @@ local function applyAppearance()
     plr.Character.Parent = nil
     plr.Character.Parent = parent
 end
-
 applyAppearance()
 spoofedPlayer.CharacterAdded:Connect(function()
     task.wait(0.2)
     applyAppearance()
 end)
 
--- 假 Premium / 驗證徽章 (executor 沒 hookmetamethod 就跳過) --
-if (premium or verified) and type(hookmetamethod) == "function" then
+-- Metatable hook:Premium / 驗證徽章 / 平台 --
+if type(hookmetamethod) == "function" then
+    -- 平台 → UserInputService 屬性對照 --
+    local platformProps = {
+        DESKTOP = { KeyboardEnabled = true,  MouseEnabled = true,  TouchEnabled = false, GamepadEnabled = false, VREnabled = false },
+        MOBILE  = { KeyboardEnabled = false, MouseEnabled = false, TouchEnabled = true,  GamepadEnabled = false, VREnabled = false },
+        CONSOLE = { KeyboardEnabled = false, MouseEnabled = false, TouchEnabled = false, GamepadEnabled = true,  VREnabled = false },
+        VR      = { KeyboardEnabled = false, MouseEnabled = false, TouchEnabled = false, GamepadEnabled = false, VREnabled = true  },
+    }
+    local platformOverrides = platform and platformProps[platform] or nil
+
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__index", function(self, key)
         if self == spoofedPlayer then
@@ -102,8 +130,13 @@ if (premium or verified) and type(hookmetamethod) == "function" then
                 return true
             end
         end
+        if platformOverrides and self == UserInputService and platformOverrides[key] ~= nil then
+            return platformOverrides[key]
+        end
         return oldNamecall(self, key)
     end)
-elseif (premium or verified) then
-    warn("[Spoof] 此 executor 不支援 hookmetamethod,無法偽造 Premium/驗證徽章")
+else
+    if premium or verified or platform then
+        warn("[Spoof] 此 executor 不支援 hookmetamethod,無法偽造 Premium/驗證/平台")
+    end
 end
