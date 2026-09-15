@@ -76,84 +76,62 @@ pcall(function()
     end
 end)
 
--- 套外觀 (ApplyDescription 為主) --
-local function applyAppearance()
+-- 非破壞性套外觀:只加/換配件、衣服、臉,不動身體部件 --
+local function applyAppearanceSafe()
     local plr = spoofedPlayer
     if not plr or not plr.Character then return end
     local char = plr.Character
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
 
-    local descOk = pcall(function()
+    local ok, appearance = pcall(function()
+        return Players:GetCharacterAppearanceAsync(decodedData.id)
+    end)
+    if not ok or not appearance then return end
+
+    -- 只清 Accessory / Shirt / Pants / BodyColors / 臉 Decal;不動 body parts, 武器 Tool --
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants")
+           or v:IsA("BodyColors") or v:IsA("ShirtGraphic") then
+            v:Destroy()
+        end
+    end
+    local head = char:FindFirstChild("Head")
+    if head then
+        local face = head:FindFirstChildOfClass("Decal")
+        if face then face:Destroy() end
+    end
+
+    for _, v in ipairs(appearance:GetChildren()) do
+        if v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("BodyColors") then
+            v.Parent = char
+        elseif v:IsA("Accessory") then
+            pcall(function() humanoid:AddAccessory(v) end)
+        elseif v:IsA("Decal") and head then
+            v.Parent = head
+        end
+    end
+    -- 不做 Parent = nil 重繪、不做 ApplyDescription (會斷武器連線)
+end
+
+-- 破壞性完整套外觀 (helper 模式才用) --
+local function applyAppearanceFull()
+    local plr = spoofedPlayer
+    if not plr or not plr.Character then return end
+    local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    pcall(function()
         local desc = Players:GetHumanoidDescriptionFromUserId(decodedData.id)
         humanoid:ApplyDescription(desc)
     end)
-
-    if not descOk then
-        local ok, appearance = pcall(function()
-            return Players:GetCharacterAppearanceAsync(decodedData.id)
-        end)
-        if not ok or not appearance then return end
-
-        for _, v in ipairs(char:GetChildren()) do
-            if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants")
-               or v:IsA("BodyColors") or v:IsA("CharacterMesh") or v:IsA("ShirtGraphic") then
-                v:Destroy()
-            end
-        end
-        local head = char:FindFirstChild("Head")
-        if head then
-            for _, v in ipairs(head:GetChildren()) do
-                if v:IsA("Decal") or v:IsA("SpecialMesh") then v:Destroy() end
-            end
-        end
-        for _, v in ipairs(appearance:GetChildren()) do
-            if v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic")
-               or v:IsA("BodyColors") or v:IsA("CharacterMesh") then
-                v.Parent = char
-            elseif v:IsA("Accessory") then
-                pcall(function() humanoid:AddAccessory(v) end)
-            elseif v:IsA("Decal") and head then
-                v.Parent = head
-            elseif (v:IsA("SpecialMesh") or v:IsA("DataModelMesh")) and head then
-                v.Parent = head
-            end
-        end
-    end
-
-    local parent = char.Parent
-    char.Parent = nil
-    char.Parent = parent
 end
+
+local applyAppearance = isSelf and applyAppearanceSafe or applyAppearanceFull
+
 applyAppearance()
-spoofedPlayer.CharacterAdded:Connect(function() task.wait(0.2); applyAppearance() end)
-
--- HumanoidDescription 快取 + 快速重套 --
-local cachedDesc
-task.spawn(function()
-    local ok, d = pcall(function()
-        return Players:GetHumanoidDescriptionFromUserId(decodedData.id)
-    end)
-    if ok then cachedDesc = d end
-end)
-local function fastReapply()
-    if not spoofedPlayer.Character or not cachedDesc then return end
-    local h = spoofedPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if h then pcall(function() h:ApplyDescription(cachedDesc) end) end
-end
-
-local function hookCharacter(char)
-    local head = char:WaitForChild("Head", 5)
-    if head then
-        head.ChildAdded:Connect(function() task.wait(0.05); fastReapply() end)
-        head.ChildRemoved:Connect(function() task.wait(0.05); fastReapply() end)
-    end
-end
-if spoofedPlayer.Character then hookCharacter(spoofedPlayer.Character) end
-spoofedPlayer.CharacterAdded:Connect(hookCharacter)
-
-task.spawn(function()
-    while task.wait(2) do fastReapply() end
+spoofedPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    applyAppearance()
 end)
 
 -- Metatable hook:Premium / 驗證 / 平台 / (自己模式下)假 Name+DisplayName --
