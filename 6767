@@ -1,0 +1,109 @@
+-- Universal Player Spoof (safe version) --
+
+-- 檢查 executor 是否支援必要 API --
+if type(getgenv) ~= "function" then
+    error("此 executor 不支援 getgenv,無法使用本腳本")
+end
+
+local cfg = getgenv().Config
+if type(cfg) ~= "table" then
+    error("找不到 getgenv().Config,請先設定 config 再執行腳本")
+end
+
+local victim   = cfg.victim
+local helper   = cfg.helper or ""
+local premium  = cfg.premium
+local verified = cfg.verified
+
+if not victim then
+    error("Config.victim 未設定 (要冒充的 UserId)")
+end
+
+repeat task.wait() until game:IsLoaded()
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+
+local target = (helper ~= "")
+    and Players:WaitForChild(helper)
+    or Players.LocalPlayer
+
+-- 抓 victim 資料 (executor 沒 HttpGet 就用 request) --
+local function fetchUser(id)
+    if type(game.HttpGet) == "function" then
+        return game:HttpGet("https://users.roblox.com/v1/users/" .. tostring(id), true)
+    end
+    local rq = (syn and syn.request) or http_request or request or (http and http.request)
+    if rq then
+        local res = rq({ Url = "https://users.roblox.com/v1/users/" .. tostring(id), Method = "GET" })
+        return res.Body or res.body
+    end
+    error("此 executor 沒有 HttpGet 或 request 函式")
+end
+
+local decodedData = HttpService:JSONDecode(fetchUser(victim))
+
+-- 改基本身分 --
+target.Name = decodedData.name
+target.UserId = decodedData.id
+target.CharacterAppearanceId = decodedData.id
+target.DisplayName = decodedData.displayName
+
+repeat task.wait() until target.Character
+target.Character:WaitForChild("Humanoid")
+target.Character.Name = decodedData.name
+target.Character.Humanoid.DisplayName = decodedData.displayName
+
+local spoofedPlayer = Players:WaitForChild(decodedData.name)
+
+-- 套 victim 外觀 --
+local function applyAppearance()
+    local plr = Players:FindFirstChild(decodedData.name)
+    if not plr or not plr.Character then return end
+
+    local ok, appearance = pcall(function()
+        return Players:GetCharacterAppearanceAsync(decodedData.id)
+    end)
+    if not ok or not appearance then return end
+
+    for _, v in ipairs(plr.Character:GetChildren()) do
+        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") then
+            v:Destroy()
+        end
+    end
+    for _, v in ipairs(appearance:GetChildren()) do
+        if v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") then
+            v.Parent = plr.Character
+        elseif v:IsA("Accessory") then
+            plr.Character.Humanoid:AddAccessory(v)
+        end
+    end
+
+    local parent = plr.Character.Parent
+    plr.Character.Parent = nil
+    plr.Character.Parent = parent
+end
+
+applyAppearance()
+spoofedPlayer.CharacterAdded:Connect(function()
+    task.wait(0.2)
+    applyAppearance()
+end)
+
+-- 假 Premium / 驗證徽章 (executor 沒 hookmetamethod 就跳過) --
+if (premium or verified) and type(hookmetamethod) == "function" then
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__index", function(self, key)
+        if self == spoofedPlayer then
+            if key == "MembershipType" and premium then
+                return Enum.MembershipType.Premium
+            end
+            if key == "HasVerifiedBadge" and verified then
+                return true
+            end
+        end
+        return oldNamecall(self, key)
+    end)
+elseif (premium or verified) then
+    warn("[Spoof] 此 executor 不支援 hookmetamethod,無法偽造 Premium/驗證徽章")
+end
