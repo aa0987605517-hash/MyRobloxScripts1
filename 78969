@@ -5794,30 +5794,13 @@ arg5.RemoveStop()
 end)
 
 local function repaint(instant)
-local hue = arg3.Hue
-local sat = arg3.Sat
-local val = arg3.Val
-frame4.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
-local svPos = UDim2.fromScale(sat, 1 - val)
-local huePos = UDim2.fromScale(0.5, hue)
-local alphaPos = UDim2.fromScale(0.5, arg3.Alpha)
+pcall(function()
+frame4.BackgroundColor3 = Color3.fromHSV(arg3.Hue, 1, 1)
+frame7.Position = UDim2.fromScale(arg3.Sat, 1 - arg3.Val)
+instance8.Position = UDim2.fromScale(0.5, arg3.Hue)
+frame14.Position = UDim2.fromScale(0.5, arg3.Alpha)
 instance10.BackgroundColor3 = arg3.Color
-if v133 ~= nil then
-v133.Text = "#" .. arg3.Color:ToHex()
-end
-if instant then
-frame7.Position = svPos
-instance8.Position = huePos
-frame14.Position = alphaPos
-else
-local ti = arg:DragTweenInfo()
-arg:Tween(frame7, { Position = svPos }, ti)
-arg:Tween(instance8, { Position = huePos }, ti)
-arg:Tween(frame14, { Position = alphaPos }, ti)
-end
-if arg3.Mode == "Gradient" then
-fn42(instant)
-end
+end)
 end
 tbl22.Repaint = repaint
 
