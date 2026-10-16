@@ -22918,14 +22918,53 @@ local GuiNameSpoofer = v115.new("player_spoofer.GuiNameSpoofer")
 local tbl18 = {}
 local tbl19 = {}
 local playerIdentities = arg._playerIdentities
-local function fn36(...) end
+local function fn36()
+table.clear(tbl19)
+for player, identity in playerIdentities._identityByPlayer do
+table.insert(tbl19, { Player = player, Kind = "Name", Name = identity.Name })
+if identity.DisplayName ~= identity.Name then
+table.insert(tbl19, { Player = player, Kind = "DisplayName", Name = identity.DisplayName })
+end
+end
+table.sort(tbl19, function(a, b) return #a.Name > #b.Name end)
+end
 local function fn37(I,W)if W=="Name"then return  playerIdentities :GetPresented(I);end;return  playerIdentities :GetPresentedDisplay(I);end
 local function fn38(l,I,W)local N,P,a={},1,0;while true do local e,c=l:find(I,P,true);if e==nil or c==nil then break;end;if P<e then table.insert(N,l:sub(P,e-1));end;table.insert(N,W);a+=1;P=c+1;end;if a==0 then return l,0;end;if P<=#l then table.insert(N,l:sub(P));end;return table.concat(N),a;end
 local function fn39(I)local W={};local N=I;for I,P in  tbl19 ,nil,nil do I= fn37 (P.Player,P.Kind);local a,e= fn38 (N,P.Name,I);if e>0 then W[P.Player]=true;N=a;end;end;return W,N;end
-local function fn40(...) end
-local function fn41(...) end
+local function fn41(I, W)
+if W.SpoofedText ~= nil and W.OriginalText ~= nil and I.Text == W.SpoofedText then
+I.Text = W.OriginalText
+end
+end
+local function fn40(I)
+local N = tbl18[I]
+if N == nil then return end
+local tracked = N.Tracked
+local originalText
+if tracked ~= nil then
+if I.Text == tracked.SpoofedText then return end
+originalText = I.Text
+else
+originalText = I.Text
+end
+local playerSet, spoofedText = fn39(originalText)
+if next(playerSet) == nil then
+N.Tracked = nil
+return
+end
+N.Tracked = { PlayerSet = playerSet, OriginalText = originalText, SpoofedText = spoofedText }
+I.Text = spoofedText
+end
 local function fn42(I,W)local N= tbl18 [I];if N==nil then return;end; tbl18 [I]=nil;N.TextChangedConnection:Disconnect();N.DestroyingConnection:Disconnect();if W and N.Tracked~=nil then  fn41 (I,N.Tracked);end;end
-local function fn43(...) end
+local function fn43(I)
+if tbl18[I] ~= nil then return end
+tbl18[I] = {
+TextChangedConnection = I:GetPropertyChangedSignal("Text"):Connect(function() fn40(I) end),
+DestroyingConnection = I.Destroying:Connect(function() fn42(I, false) end),
+Tracked = nil,
+}
+fn40(I)
+end
 fn36()
 
 v116(GuiNameSpoofer, function(arg2, arg3)
