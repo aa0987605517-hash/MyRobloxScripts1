@@ -10,13 +10,6 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 local K = { connections = {}, cleanups = {}, destroyed = false }
 getgenv().KiciaRebuild = K
 
-do
-    local qot = K.fn("queue_on_teleport") or K.fn("queueonteleport")
-    if qot then
-        qot('loadstring(game:HttpGet("https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/main/78969"))()')
-    end
-end
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -34,6 +27,13 @@ function K.fn(name)
     pcall(function() v = getfenv(0)[name] end)
     if type(v) ~= "function" then pcall(function() v = getfenv()[name] end) end
     return type(v) == "function" and v or nil
+end
+
+do
+    local qot = K.fn("queue_on_teleport") or K.fn("queueonteleport")
+    if qot then
+        qot('loadstring(game:HttpGet("https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/main/78969"))()')
+    end
 end
 
 local getthreadidentity_ = K.fn("getthreadidentity") or K.fn("getidentity")
