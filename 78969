@@ -24025,10 +24025,40 @@ return
 end
 local GuiThumbnailSpoofer = v115.new("player_spoofer.GuiThumbnailSpoofer")
 local tbl18 = {}
-local function fn37(...) end
-local function fn38(...) end
+local function fn37(I)
+local N = tbl18[I]
+if N == nil then return end
+local W = I.Image
+if W == N.SpoofedImage then return end
+N.OriginalImage = W
+local P = fn36(W, arg._spoofsByUserId)
+if P ~= nil then
+N.SpoofedImage = P
+I.Image = P
+else
+fn39(I, false)
+end
+end
+local function fn38(I, N)
+if N.OriginalImage ~= nil and N.SpoofedImage ~= nil and I.Image == N.SpoofedImage then
+I.Image = N.OriginalImage
+end
+end
 local function fn39(I,W)local N= tbl18 [I];if N==nil then return;end; tbl18 [I]=nil;N.ImageChangedConnection:Disconnect();N.DestroyingConnection:Disconnect();if W then  fn38 (I,N);end;end
-local function fn40(...) end
+local function fn40(I)
+if tbl18[I] ~= nil then return end
+local W = I.Image
+if type(W) ~= "string" or W == "" then return end
+local N = fn36(W, arg._spoofsByUserId)
+if N == nil then return end
+tbl18[I] = {
+OriginalImage = W,
+SpoofedImage = N,
+ImageChangedConnection = I:GetPropertyChangedSignal("Image"):Connect(function() fn37(I) end),
+DestroyingConnection = I.Destroying:Connect(function() fn39(I, false) end),
+}
+I.Image = N
+end
 
 arg._loaded = {
 Trove = GuiThumbnailSpoofer,
