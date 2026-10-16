@@ -32,7 +32,7 @@ end
 do
     local qot = K.fn("queue_on_teleport") or K.fn("queueonteleport")
     if qot then
-        qot('task.spawn(function() if not game:IsLoaded() then game.Loaded:Wait() end task.wait(3) loadstring(game:HttpGet("https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/main/78969"))() end)')
+        qot('repeat task.wait() until game:IsLoaded() task.wait(10) loadstring(game:HttpGet("https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/main/78969"))()')
     end
 end
 
