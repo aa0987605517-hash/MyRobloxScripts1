@@ -15521,8 +15521,10 @@ imageLabel.Size = UDim2.fromOffset(rail.LogoSize.X, rail.LogoSize.Y)
 imageLabel.BorderSizePixel = v86[186]
 if image ~= nil and image == K.LithiumLogo then
 imageLabel.ScaleType = Enum.ScaleType.Fit
-end
+arg3:Bind(imageLabel, v86[156], "Outline")
+else
 arg3:Bind(imageLabel, v86[156], "Accent")
+end
 imageLabel.Parent = frame2
 local frame3 = Instance.new("Frame")
 frame3.Position = UDim2.new(0, 0, v86[63], -v86[63])
@@ -16149,8 +16151,10 @@ instance.Size = UDim2.fromOffset(20, 20)
 instance.BorderSizePixel = 0
 if image ~= nil and image == K.LithiumLogo then
 instance.ScaleType = Enum.ScaleType.Fit
-end
+arg:Bind(instance, "ImageColor3", "Outline")
+else
 arg:Bind(instance, "ImageColor3", "Accent")
+end
 instance.Parent = parent
 end
 
