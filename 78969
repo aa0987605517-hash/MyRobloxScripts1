@@ -66338,7 +66338,7 @@ do
     end
     local wrf, gca = K.fn("writefile"), K.fn("getcustomasset") or K.fn("getsynasset")
     if wrf and gca then
-        local path = "kiciarebuild/lithium_logo.png"
+        local path = "kiciarebuild/kh_logo_v2.png"
         local ok = pcall(wrf, path, decode(LITHIUM_LOGO_B64))
         local ok2, id = pcall(gca, path)
         if ok and ok2 and type(id) == "string" and id ~= "" then K.LithiumLogo = id end
