@@ -62151,8 +62151,39 @@ if not arg.Character.State.Alive then
 return false
 end
 local v116 = arg.ItemObserver:EquippedItemAsMelee()
-if v116 ~= nil and v116:IsDeflecting() then
+if v116 ~= nil then
+if v116:IsDeflecting() then
 return false
+end
+local ok, dc = pcall(v102, v116.Inner, "_deflect_cooldown")
+if ok and dc ~= nil then
+local ok2, info = pcall(v102, v116, "_info")
+local cdVal = ok2 and info and v102(info, "DeflectCooldown")
+local activeEnd = cdVal and (dc - cdVal) or dc
+if tick() < activeEnd then
+return false
+end
+end
+local charOk, isBlocking = pcall(function()
+local model = arg.Character.State.Model
+if not model then return false end
+local hum = model:FindFirstChildWhichIsA("Humanoid")
+if not hum then return false end
+local animator = hum:FindFirstChildOfClass("Animator")
+if not animator then return false end
+for _, track in animator:GetPlayingAnimationTracks() do
+if track.IsPlaying and track.Animation then
+local n = (track.Animation.Name or ""):lower()
+if n:find("deflect") or n:find("parry") or n:find("block") then
+return true
+end
+end
+end
+return false
+end)
+if charOk and isBlocking then
+return false
+end
 end
 return true
 end
