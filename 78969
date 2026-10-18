@@ -63368,7 +63368,7 @@ return
 end
 
 local target = arg._targetSelection:GetTarget()
-if _G._TargetHUDFeed then pcall(_G._TargetHUDFeed, target) end
+
 
 if target ~= nil then
 arg._lastTargetWorld = target.AliveState.RootPart.Position
