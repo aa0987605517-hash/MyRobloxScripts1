@@ -66854,10 +66854,6 @@ do
         updateHUD(fakeTarget)
     end)
 
-    _G._TargetHUDFeed = function(target)
-        _G._TargetHUDRagebotTarget = target
-    end
-
     table.insert(K.cleanups, function()
         conn:Disconnect()
         hudGui:Destroy()
@@ -66865,7 +66861,6 @@ do
         _G._TargetHUDPosX = nil
         _G._TargetHUDPosY = nil
         _G._TargetHUDScale = nil
-        _G._TargetHUDFeed = nil
         _G._TargetHUDRagebotTarget = nil
     end)
 end
