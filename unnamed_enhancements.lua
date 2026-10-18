@@ -1857,7 +1857,7 @@ function Native.themes(captures)
             themeManager.BuiltInThemes = {
                 Default = {
                     1,
-                    httpService:JSONDecode('{\n\t\t\t\t"FontColor":"ffffff",\n\t\t\t\t"MainColor":"1b2d4e",\n\t\t\t\t"AccentColor":"7ec8e3",\n\t\t\t\t"BackgroundColor":"162840",\n\t\t\t\t"OutlineColor":"2a4470",\n\t\t\t\t"RiskColor":"ff7425",\n\n\t\t\t\t"ItemType":"Unnamed enhancement- discord.gg/enhancements",\n\t\t\t\t"SwordColor":"ffffff",\n\t\t\t\t"SwordTransparency":"0",\n\t\t\t\t"SwordReflectance":"0",\n\t\t\t\t"SwordSpeed":"0.15",\n\t\t\t\t"SwordMaterial":"Neon",\n\n\t\t\t\t"Contrast":"0",\n\t\t\t\t"Saturation":"0",\n\t\t\t\t"Brightness":"0",\n\n\t\t\t\t"BackColor":"000000",\n\t\t\t\t"BlurSize":"15",\n\t\t\t\t"BackTransparency":"0.7"\n\t\t\t}'),
+                    httpService:JSONDecode('{\n\t\t\t\t"FontColor":"ffffff",\n\t\t\t\t"MainColor":"0f1923",\n\t\t\t\t"AccentColor":"7ec8e3",\n\t\t\t\t"BackgroundColor":"0b1219",\n\t\t\t\t"OutlineColor":"1a2a3d",\n\t\t\t\t"RiskColor":"ff7425",\n\n\t\t\t\t"ItemType":"Unnamed enhancement- discord.gg/enhancements",\n\t\t\t\t"SwordColor":"ffffff",\n\t\t\t\t"SwordTransparency":"0",\n\t\t\t\t"SwordReflectance":"0",\n\t\t\t\t"SwordSpeed":"0.15",\n\t\t\t\t"SwordMaterial":"Neon",\n\n\t\t\t\t"Contrast":"0",\n\t\t\t\t"Saturation":"0",\n\t\t\t\t"Brightness":"0",\n\n\t\t\t\t"BackColor":"000000",\n\t\t\t\t"BlurSize":"15",\n\t\t\t\t"BackTransparency":"0.7"\n\t\t\t}'),
                 },
                 ['Tokyo Night'] = {
                     1,
