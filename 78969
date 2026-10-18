@@ -62150,28 +62150,6 @@ end
 if not arg.Character.State.Alive then
 return false
 end
-if v115.Data.Ragebot.AntiDeflect then
-local charOk, isBlocking = v107(function()
-local model = arg.Character.State.Model
-if not model then return false end
-local hum = model:FindFirstChildWhichIsA("Humanoid")
-if not hum then return false end
-local animator = hum:FindFirstChildOfClass("Animator")
-if not animator then return false end
-for _, track in animator:GetPlayingAnimationTracks() do
-if track.IsPlaying and track.Animation then
-local aid = track.Animation.AnimationId or ""
-if aid:find("14761240825") or aid:find("14761220206") or aid:find("14761234917") or aid:find("14761221711") or aid:find("14761223422") then
-return true
-end
-end
-end
-return false
-end)
-if charOk and isBlocking then
-return false
-end
-end
 return true
 end
 
@@ -62315,7 +62293,7 @@ local tbl21 = {
 ["\5"] = 3.1415926535897931,
 }
 
-local tbl22 = { ["\0"] = 0, ["\1"] = 0, ["\2"] = v86[186], ["\3"] = v86[186], ["\4"] = 0, ["\5"] = 0 }
+local tbl22 = { ["\0"] = 0, ["\1"] = 1, ["\2"] = v86[186], ["\3"] = v86[186], ["\4"] = 0, ["\5"] = 0 }
 local index2 = {}
 index2.__index = index2
 
@@ -62452,13 +62430,7 @@ local v120 = arg._partGlue:Acquire(gluedOurPart, hitboxHead)
 arg._gluedOurPart = gluedOurPart
 local n
 
-if ragebot.NormalMeleeTP then
-local hPos = hitboxHead.Position
-local dir = gluedOurPart.Position - hPos
-dir = Vector3.new(dir.X, 0, dir.Z)
-if dir.Magnitude > 0.01 then dir = dir.Unit * 3 else dir = Vector3.new(3, 0, 0) end
-n = v118(hPos + dir + Vector3.new(0, v119.Y, 0), hPos)
-elseif flag19 then
+if flag19 then
 n = v120 + v119
 else
 n = v118(v120.Position + v119, hitboxHead.Position)
