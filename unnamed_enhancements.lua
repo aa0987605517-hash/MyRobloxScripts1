@@ -493650,97 +493650,72 @@ task.spawn(function()
     local Options = rawget(sharedEnv, 'Options') or {}
     local Toggles = rawget(sharedEnv, 'Toggles') or {}
 
-    -- === ACCENT GLOW EFFECT (Neon glow on blue/accent-colored elements) ===
+    -- === ACCENT GLOW EFFECT (Neon border on blue/accent-colored elements) ===
     task.spawn(function()
         task.wait(1)
         pcall(function()
             if not lib.ScreenGui then return end
-            local accentColor = lib.AccentColor or Color3.fromHex("7ec8e3")
-            local glowPad = 4
-            local glowTransparency = 0.55
+            local defaultAccent = Color3.fromHex("7ec8e3")
 
             local function colorsMatch(c1, c2)
-                return math.abs(c1.R - c2.R) < 0.05 and math.abs(c1.G - c2.G) < 0.05 and math.abs(c1.B - c2.B) < 0.05
+                if not c1 or not c2 then return false end
+                return math.abs(c1.R - c2.R) < 0.08 and math.abs(c1.G - c2.G) < 0.08 and math.abs(c1.B - c2.B) < 0.08
             end
 
-            local function addGlow(obj)
+            local function applyNeonStroke(obj, accent)
                 pcall(function()
                     if not (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("TextLabel") or obj:IsA("ImageLabel")) then return end
-                    if obj.Name == "AccentNeonGlow" then return end
                     if obj.BackgroundTransparency >= 0.9 then return end
-                    local curAccent = lib.AccentColor or accentColor
-                    if not colorsMatch(obj.BackgroundColor3, curAccent) then return end
-                    local parent = obj.Parent
-                    if not parent or not parent:IsA("GuiObject") then return end
-                    if obj:FindFirstChild("AccentNeonGlow") then return end
+                    if not colorsMatch(obj.BackgroundColor3, accent) then return end
 
-                    local glow = Instance.new("Frame")
-                    glow.Name = "AccentNeonGlow"
-                    glow.BackgroundColor3 = curAccent
-                    glow.BackgroundTransparency = glowTransparency
-                    glow.BorderSizePixel = 0
-                    glow.ZIndex = obj.ZIndex - 1
-                    glow.Size = UDim2.new(obj.Size.X.Scale, obj.Size.X.Offset + glowPad * 2, obj.Size.Y.Scale, obj.Size.Y.Offset + glowPad * 2)
-                    glow.Position = UDim2.new(obj.Position.X.Scale, obj.Position.X.Offset - glowPad, obj.Position.Y.Scale, obj.Position.Y.Offset - glowPad)
-                    glow.Parent = parent
+                    -- Mark it so we don't repeat
+                    if obj:GetAttribute("NeonGlowApplied") then
+                        -- Still update color
+                        local existing = obj:FindFirstChild("NeonGlowStroke")
+                        if existing then existing.Color = accent end
+                        return
+                    end
+                    obj:SetAttribute("NeonGlowApplied", true)
 
-                    local corner = obj:FindFirstChildOfClass("UICorner")
-                    if corner then
-                        local gc = Instance.new("UICorner")
-                        gc.CornerRadius = corner.CornerRadius
-                        gc.Parent = glow
+                    -- Remove any existing thin stroke
+                    for _, c in ipairs(obj:GetChildren()) do
+                        if c:IsA("UIStroke") and c.Name ~= "NeonGlowStroke" then
+                            c:Destroy()
+                        end
                     end
 
-                    local outerGlow = Instance.new("Frame")
-                    outerGlow.Name = "AccentNeonGlowOuter"
-                    outerGlow.BackgroundColor3 = curAccent
-                    outerGlow.BackgroundTransparency = 0.8
-                    outerGlow.BorderSizePixel = 0
-                    outerGlow.ZIndex = obj.ZIndex - 2
-                    outerGlow.Size = UDim2.new(obj.Size.X.Scale, obj.Size.X.Offset + glowPad * 4, obj.Size.Y.Scale, obj.Size.Y.Offset + glowPad * 4)
-                    outerGlow.Position = UDim2.new(obj.Position.X.Scale, obj.Position.X.Offset - glowPad * 2, obj.Position.Y.Scale, obj.Position.Y.Offset - glowPad * 2)
-                    outerGlow.Parent = parent
-
-                    if corner then
-                        local gc2 = Instance.new("UICorner")
-                        gc2.CornerRadius = corner.CornerRadius
-                        gc2.Parent = outerGlow
-                    end
+                    local stroke = Instance.new("UIStroke")
+                    stroke.Name = "NeonGlowStroke"
+                    stroke.Color = accent
+                    stroke.Thickness = 3
+                    stroke.Transparency = 0.3
+                    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                    stroke.LineJoinMode = Enum.LineJoinMode.Round
+                    stroke.Parent = obj
                 end)
             end
 
-            for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
-                addGlow(obj)
+            local function scanAll()
+                local accent = lib.AccentColor or defaultAccent
+                for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
+                    applyNeonStroke(obj, accent)
+                end
             end
+
+            scanAll()
 
             lib.ScreenGui.DescendantAdded:Connect(function(obj)
                 task.defer(function()
-                    addGlow(obj)
+                    local accent = lib.AccentColor or defaultAccent
+                    applyNeonStroke(obj, accent)
                 end)
             end)
 
+            -- Periodically re-scan for theme changes
             task.spawn(function()
                 while lib and lib.ScreenGui and lib.ScreenGui.Parent do
-                    task.wait(3)
-                    pcall(function()
-                        local curAccent = lib.AccentColor or accentColor
-                        for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
-                            pcall(function()
-                                if obj.Name == "AccentNeonGlow" or obj.Name == "AccentNeonGlowOuter" then
-                                    obj.BackgroundColor3 = curAccent
-                                end
-                            end)
-                        end
-                        for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
-                            if (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("TextLabel") or obj:IsA("ImageLabel")) then
-                                if obj.Name ~= "AccentNeonGlow" and obj.Name ~= "AccentNeonGlowOuter" and obj.BackgroundTransparency < 0.9 then
-                                    if colorsMatch(obj.BackgroundColor3, curAccent) and not obj:FindFirstChild("AccentNeonGlow") then
-                                        addGlow(obj)
-                                    end
-                                end
-                            end
-                        end
-                    end)
+                    task.wait(2)
+                    pcall(scanAll)
                 end
             end)
         end)
