@@ -493937,21 +493937,21 @@ task.spawn(function()
     -- Leaderstat spoof system
     local leaderstatEntries = {}
 
-    local function applyLeaderstat(player, value)
-        local key = player.UserId
-        if leaderstatEntries[key] then return end
+    local function applyLeaderstat(player, path, toggleName, getValueFn)
+        local entryKey = tostring(player.UserId) .. ":" .. table.concat(path, "/")
+        if leaderstatEntries[entryKey] then return end
 
         task.spawn(function()
             local current = player
-            for _, name in ipairs({"CustomLeaderstats", "Current ELO"}) do
+            for _, name in ipairs(path) do
                 local child = current:FindFirstChild(name)
                 if not child then
-                    local start = os.clock()
+                    local startT = os.clock()
                     repeat
                         child = current:FindFirstChild(name)
                         if child then break end
                         task.wait(0.1)
-                    until child or (os.clock() - start > 10)
+                    until child or (os.clock() - startT > 10)
                 end
                 if not child then return end
                 current = child
@@ -493964,32 +493964,42 @@ task.spawn(function()
             local conn = stat:GetPropertyChangedSignal("Value"):Connect(function()
                 if isWriting then return end
                 original = stat.Value
-                if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                if Toggles[toggleName] and Toggles[toggleName].Value then
                     isWriting = true
-                    stat.Value = Options.IS_EloValue and Options.IS_EloValue.Value or 2000
+                    stat.Value = getValueFn()
                     isWriting = false
                 end
             end)
 
-            leaderstatEntries[key] = {
+            leaderstatEntries[entryKey] = {
                 Stat = stat,
                 Original = original,
                 Connection = conn,
             }
 
-            if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+            if Toggles[toggleName] and Toggles[toggleName].Value then
                 isWriting = true
-                stat.Value = Options.IS_EloValue and Options.IS_EloValue.Value or 2000
+                stat.Value = getValueFn()
                 isWriting = false
             end
         end)
     end
 
+    local function removeLeaderstat(player, path)
+        local entryKey = tostring(player.UserId) .. ":" .. table.concat(path, "/")
+        local entry = leaderstatEntries[entryKey]
+        if entry then
+            entry.Connection:Disconnect()
+            pcall(function() entry.Stat.Value = entry.Original end)
+            leaderstatEntries[entryKey] = nil
+        end
+    end
+
     -- Attribute-to-toggle mapping
     local ATTR_MAP = {
         IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50 end },
-        IS_LevelSpoof     = { attr = "Level", getValue = function() return Options.IS_LevelValue and Options.IS_LevelValue.Value or 100 end },
-        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return Options.IS_EloValue and Options.IS_EloValue.Value or 2000 end },
+        IS_LevelSpoof     = { attr = "Level", getValue = function() return Options.IS_LevelValue and Options.IS_LevelValue.Value or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
+        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return Options.IS_EloValue and Options.IS_EloValue.Value or 2000 end, leaderstat = {"CustomLeaderstats", "Current ELO"} },
         IS_NametagStatus  = { attr = "PlayerStatus", getValue = function() return Options.IS_NametagType and Options.IS_NametagType.Value or "Prime" end },
         IS_Influencer     = { attr = "IsInfluencer", getValue = function() return true end },
         IS_RobloxEmployee = { attr = "IsRobloxEmployee", getValue = function() return true end },
@@ -494001,6 +494011,9 @@ task.spawn(function()
         local info = ATTR_MAP[toggleName]
         if not info then return end
         guardAttribute(player, info.attr):Set(info.getValue())
+        if info.leaderstat then
+            applyLeaderstat(player, info.leaderstat, toggleName, info.getValue)
+        end
     end
 
     -- Restore one attribute spoof from a player
@@ -494012,6 +494025,9 @@ task.spawn(function()
         if guard then
             guard:Destroy()
         end
+        if info.leaderstat then
+            removeLeaderstat(player, info.leaderstat)
+        end
     end
 
     -- Apply all enabled attribute spoofs to a player
@@ -494020,9 +494036,6 @@ task.spawn(function()
             if Toggles[toggleName] and Toggles[toggleName].Value then
                 applySingleSpoof(player, toggleName)
             end
-        end
-        if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
-            applyLeaderstat(player, Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
         end
     end
 
@@ -494042,20 +494055,6 @@ task.spawn(function()
                         safeCall(applySingleSpoof, player, toggleName)
                     else
                         safeCall(restoreSingleSpoof, player, toggleName)
-                    end
-                end
-                -- ELO leaderstat
-                if toggleName == 'IS_EloSpoof' then
-                    if val then
-                        for _, player in Players:GetPlayers() do
-                            applyLeaderstat(player, Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
-                        end
-                    else
-                        for _, entry in pairs(leaderstatEntries) do
-                            entry.Connection:Disconnect()
-                            pcall(function() entry.Stat.Value = entry.Original end)
-                        end
-                        leaderstatEntries = {}
                     end
                 end
             end)
