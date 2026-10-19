@@ -494395,28 +494395,28 @@ task.spawn(function()
             local ok, method = pcall(getnamecallmethod)
             if not ok then return oldNc(self, ...) end
 
-            if method == "GetUserThumbnailAsync" then
-                local thumbArgs = {...}
-                local ok2, res = pcall(function()
-                    if self ~= Players then return end
-                    if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
-                    local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if not spoofId then return end
-                    if thumbArgs[1] == LocalPlayer.UserId then
-                        thumbArgs[1] = spoofId
-                        return {oldNc(self, unpack(thumbArgs))}
-                    end
-                end)
-                if ok2 and type(res) == "table" then return unpack(res) end
+            if method ~= "GetUserThumbnailAsync" and method ~= "InvokeServer" then
                 return oldNc(self, ...)
             end
 
-            local result = oldNc(self, ...)
+            if method == "GetUserThumbnailAsync" then
+                if self == Players and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                    local thumbArgs = {...}
+                    local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if spoofId and thumbArgs[1] == LocalPlayer.UserId then
+                        thumbArgs[1] = spoofId
+                        return oldNc(self, unpack(thumbArgs))
+                    end
+                end
+                return oldNc(self, ...)
+            end
 
-            if method == "InvokeServer" then
+            local results = table.pack(oldNc(self, ...))
+
+            local isRemFunc = false
+            pcall(function() isRemFunc = self:IsA("RemoteFunction") end)
+            if isRemFunc and type(results[1]) == "table" then
                 pcall(function()
-                    if not self:IsA("RemoteFunction") then return end
-                    if type(result) ~= "table" then return end
                     local function tryPatch(t)
                         if type(t) ~= "table" then return end
                         local hasLevel = t.Level ~= nil
@@ -494441,14 +494441,14 @@ task.spawn(function()
                             t.StatisticDuelsWinStreak = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
                         end
                     end
-                    pcall(tryPatch, result)
-                    for _, v in pairs(result) do
+                    pcall(tryPatch, results[1])
+                    for _, v in pairs(results[1]) do
                         if type(v) == "table" then pcall(tryPatch, v) end
                     end
                 end)
             end
 
-            return result
+            return table.unpack(results, 1, results.n)
         end)
 
         setreadonly(mt, true)
