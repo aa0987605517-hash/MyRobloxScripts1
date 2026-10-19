@@ -494155,13 +494155,12 @@ task.spawn(function()
             end
         end
 
-        local srcHead = model:FindFirstChild("Head")
+        local srcFace = model:FindFirstChild("Head") and model.Head:FindFirstChildOfClass("Decal")
         local dstHead = character:FindFirstChild("Head")
-        if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
-            dstHead.Transparency = srcHead.Transparency
-            if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
-                dstHead.MeshId = srcHead.MeshId
-                dstHead.TextureID = srcHead.TextureID
+        if srcFace and dstHead then
+            local dstFace = dstHead:FindFirstChildOfClass("Decal")
+            if dstFace then
+                dstFace.Texture = srcFace.Texture
             end
         end
 
@@ -494186,7 +494185,7 @@ task.spawn(function()
                 end
 
                 avatarConns[1] = LocalPlayer.CharacterAdded:Connect(function(newChar)
-                    task.wait(1)
+                    task.wait(5)
                     local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
                     if uid then
                         safeCall(applyAvatarToCharacter, newChar, uid)
@@ -494202,33 +494201,35 @@ task.spawn(function()
     end
 
     -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
-    local RunService = game:GetService("RunService")
     local thumbConns = {}
     local myIdStr = tostring(LocalPlayer.UserId)
 
     local function startThumbSpoof()
         local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
         if not spoofId then return end
-        local sidStr = tostring(spoofId)
 
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
 
-        thumbConns[1] = RunService.RenderStepped:Connect(function()
+        local function replaceInObj(obj)
             pcall(function()
-                local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                if not sid then return end
-                local s = tostring(sid)
-                for _, obj in ipairs(playerGui:GetDescendants()) do
-                    pcall(function()
-                        if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" and obj.Image ~= "" then
-                            if string.find(obj.Image, myIdStr, 1, true) then
-                                obj.Image = string.gsub(obj.Image, myIdStr, s)
-                            end
-                        end
-                    end)
+                if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" and obj.Image ~= "" then
+                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if sid and string.find(obj.Image, myIdStr, 1, true) then
+                        obj.Image = string.gsub(obj.Image, myIdStr, tostring(sid))
+                    end
                 end
             end)
+        end
+
+        for _, obj in ipairs(playerGui:GetDescendants()) do
+            replaceInObj(obj)
+        end
+
+        thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
+            task.delay(0.05, function() replaceInObj(obj) end)
+            task.delay(0.2, function() replaceInObj(obj) end)
+            task.delay(0.5, function() replaceInObj(obj) end)
         end)
     end
 
@@ -494248,77 +494249,6 @@ task.spawn(function()
             end
         end)
     end
-
-    -- === DATA HOOK (Level/ELO/Winstreak on profile card) ===
-    pcall(function()
-        local mt = getrawmetatable(game)
-        if not mt then return end
-        local oldNc = mt.__namecall
-        if not oldNc then return end
-        setreadonly(mt, false)
-
-        local function isProfileData(t)
-            local count = 0
-            if t.Level ~= nil then count = count + 1 end
-            if t.DisplayELO ~= nil then count = count + 1 end
-            if t.StatisticDuelsWinStreak ~= nil then count = count + 1 end
-            if t.IsInfluencer ~= nil then count = count + 1 end
-            if t.GroupRank ~= nil then count = count + 1 end
-            if t.PlayerStatus ~= nil then count = count + 1 end
-            return count >= 2
-        end
-
-        local function patchTable(t)
-            if not isProfileData(t) then return end
-            if t.Level ~= nil and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
-                t.Level = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
-            end
-            if t.DisplayELO ~= nil and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
-                t.DisplayELO = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
-            end
-            if t.StatisticDuelsWinStreak ~= nil and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
-                t.StatisticDuelsWinStreak = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
-            end
-        end
-
-        mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-
-            if method == "GetUserThumbnailAsync" then
-                local ok3, newResult = pcall(function()
-                    if self ~= Players then return nil end
-                    if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return nil end
-                    local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    local args = {...}
-                    if spoofId and args[1] == LocalPlayer.UserId then
-                        args[1] = spoofId
-                        return oldNc(self, unpack(args))
-                    end
-                    return nil
-                end)
-                if ok3 and newResult ~= nil then return newResult end
-            end
-
-            local result = oldNc(self, ...)
-
-            if method == "InvokeServer" then
-                pcall(function()
-                    if not self:IsA("RemoteFunction") then return end
-                    if type(result) ~= "table" then return end
-                    pcall(patchTable, result)
-                    for k, v in pairs(result) do
-                        if type(v) == "table" then
-                            pcall(patchTable, v)
-                        end
-                    end
-                end)
-            end
-
-            return result
-        end)
-
-        setreadonly(mt, true)
-    end)
 
     -- Ping spoof
     local PING_RANGES = {
