@@ -493650,71 +493650,97 @@ task.spawn(function()
     local Options = rawget(sharedEnv, 'Options') or {}
     local Toggles = rawget(sharedEnv, 'Toggles') or {}
 
-    -- === ACCENT GLOW EFFECT ===
+    -- === ACCENT GLOW EFFECT (Neon glow on blue/accent-colored elements) ===
     task.spawn(function()
-        task.wait(0.5)
+        task.wait(1)
         pcall(function()
             if not lib.ScreenGui then return end
             local accentColor = lib.AccentColor or Color3.fromHex("7ec8e3")
+            local glowPad = 4
+            local glowTransparency = 0.55
 
-            -- Add glow to all existing accent-colored UIStrokes
+            local function colorsMatch(c1, c2)
+                return math.abs(c1.R - c2.R) < 0.05 and math.abs(c1.G - c2.G) < 0.05 and math.abs(c1.B - c2.B) < 0.05
+            end
+
+            local function addGlow(obj)
+                pcall(function()
+                    if not (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("TextLabel") or obj:IsA("ImageLabel")) then return end
+                    if obj.Name == "AccentNeonGlow" then return end
+                    if obj.BackgroundTransparency >= 0.9 then return end
+                    local curAccent = lib.AccentColor or accentColor
+                    if not colorsMatch(obj.BackgroundColor3, curAccent) then return end
+                    local parent = obj.Parent
+                    if not parent or not parent:IsA("GuiObject") then return end
+                    if obj:FindFirstChild("AccentNeonGlow") then return end
+
+                    local glow = Instance.new("Frame")
+                    glow.Name = "AccentNeonGlow"
+                    glow.BackgroundColor3 = curAccent
+                    glow.BackgroundTransparency = glowTransparency
+                    glow.BorderSizePixel = 0
+                    glow.ZIndex = obj.ZIndex - 1
+                    glow.Size = UDim2.new(obj.Size.X.Scale, obj.Size.X.Offset + glowPad * 2, obj.Size.Y.Scale, obj.Size.Y.Offset + glowPad * 2)
+                    glow.Position = UDim2.new(obj.Position.X.Scale, obj.Position.X.Offset - glowPad, obj.Position.Y.Scale, obj.Position.Y.Offset - glowPad)
+                    glow.Parent = parent
+
+                    local corner = obj:FindFirstChildOfClass("UICorner")
+                    if corner then
+                        local gc = Instance.new("UICorner")
+                        gc.CornerRadius = corner.CornerRadius
+                        gc.Parent = glow
+                    end
+
+                    local outerGlow = Instance.new("Frame")
+                    outerGlow.Name = "AccentNeonGlowOuter"
+                    outerGlow.BackgroundColor3 = curAccent
+                    outerGlow.BackgroundTransparency = 0.8
+                    outerGlow.BorderSizePixel = 0
+                    outerGlow.ZIndex = obj.ZIndex - 2
+                    outerGlow.Size = UDim2.new(obj.Size.X.Scale, obj.Size.X.Offset + glowPad * 4, obj.Size.Y.Scale, obj.Size.Y.Offset + glowPad * 4)
+                    outerGlow.Position = UDim2.new(obj.Position.X.Scale, obj.Position.X.Offset - glowPad * 2, obj.Position.Y.Scale, obj.Position.Y.Offset - glowPad * 2)
+                    outerGlow.Parent = parent
+
+                    if corner then
+                        local gc2 = Instance.new("UICorner")
+                        gc2.CornerRadius = corner.CornerRadius
+                        gc2.Parent = outerGlow
+                    end
+                end)
+            end
+
             for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
-                pcall(function()
-                    if obj:IsA("UIStroke") and obj.Thickness <= 1 then
-                        local parent = obj.Parent
-                        if parent and (parent:IsA("Frame") or parent:IsA("ImageButton") or parent:IsA("TextButton")) then
-                            -- Create glow layer behind
-                            local glowStroke = Instance.new("UIStroke")
-                            glowStroke.Name = "AccentGlow"
-                            glowStroke.Color = accentColor
-                            glowStroke.Thickness = 3
-                            glowStroke.Transparency = 0.7
-                            glowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                            glowStroke.Parent = parent
-                        end
-                    end
-                end)
+                addGlow(obj)
             end
 
-            -- Watch for theme changes to update glow color
-            local function updateGlow()
-                local newColor = lib.AccentColor or accentColor
-                pcall(function()
-                    for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
-                        if obj:IsA("UIStroke") and obj.Name == "AccentGlow" then
-                            obj.Color = newColor
-                        end
-                    end
-                end)
-            end
-
-            -- Also add glow to new elements
             lib.ScreenGui.DescendantAdded:Connect(function(obj)
                 task.defer(function()
+                    addGlow(obj)
+                end)
+            end)
+
+            task.spawn(function()
+                while lib and lib.ScreenGui and lib.ScreenGui.Parent do
+                    task.wait(3)
                     pcall(function()
-                        if obj:IsA("UIStroke") and obj.Name ~= "AccentGlow" and obj.Thickness <= 1 then
-                            local parent = obj.Parent
-                            if parent and not parent:FindFirstChild("AccentGlow") then
-                                if parent:IsA("Frame") or parent:IsA("ImageButton") or parent:IsA("TextButton") then
-                                    local glowStroke = Instance.new("UIStroke")
-                                    glowStroke.Name = "AccentGlow"
-                                    glowStroke.Color = lib.AccentColor or accentColor
-                                    glowStroke.Thickness = 3
-                                    glowStroke.Transparency = 0.7
-                                    glowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                                    glowStroke.Parent = parent
+                        local curAccent = lib.AccentColor or accentColor
+                        for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
+                            pcall(function()
+                                if obj.Name == "AccentNeonGlow" or obj.Name == "AccentNeonGlowOuter" then
+                                    obj.BackgroundColor3 = curAccent
+                                end
+                            end)
+                        end
+                        for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
+                            if (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("TextLabel") or obj:IsA("ImageLabel")) then
+                                if obj.Name ~= "AccentNeonGlow" and obj.Name ~= "AccentNeonGlowOuter" and obj.BackgroundTransparency < 0.9 then
+                                    if colorsMatch(obj.BackgroundColor3, curAccent) and not obj:FindFirstChild("AccentNeonGlow") then
+                                        addGlow(obj)
+                                    end
                                 end
                             end
                         end
                     end)
-                end)
-            end)
-
-            -- Periodically sync glow color with accent
-            task.spawn(function()
-                while lib and lib.ScreenGui and lib.ScreenGui.Parent do
-                    task.wait(2)
-                    updateGlow()
                 end
             end)
         end)
