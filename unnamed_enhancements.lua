@@ -493671,6 +493671,7 @@ task.spawn(function()
         Default = false,
     })
     infoGroup:AddInput('IS_NameValue', {
+        Text = 'Name',
         Default = '',
         Placeholder = 'Display Name',
         Numeric = false,
