@@ -494262,132 +494262,127 @@ task.spawn(function()
     if Options.IS_EloValue then Options.IS_EloValue:OnChanged(function() reapplyToggle('IS_EloSpoof') end) end
     if Options.IS_NametagType then Options.IS_NametagType:OnChanged(function() reapplyToggle('IS_NametagStatus') end) end
 
-    -- === AVATAR MODEL SPOOF (accessories only, safe for Rivals) ===
+    -- === AVATAR MODEL SPOOF ===
     local avatarConns = {}
-    local avatarHiddenParts = {}
-    local avatarAddedParts = {}
+    local avatarSpoofUserId = nil
 
-    local function applyAvatarAccessories(character, userId)
+    local function applyAvatarSpoof(character, userId)
+        if not character or not character.Parent then return end
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid then return end
 
-        local ok, model = pcall(function()
-            return Players:CreateHumanoidModelFromDescriptionAsync(
-                Players:GetHumanoidDescriptionFromUserId(userId),
-                humanoid.RigType
-            )
+        local ok, desc = pcall(function()
+            return Players:GetHumanoidDescriptionFromUserId(userId)
         end)
-        if not ok or not model then return end
+        if not ok or not desc then return end
 
-        local key = character:GetFullName()
-        avatarHiddenParts[key] = avatarHiddenParts[key] or {}
-        avatarAddedParts[key] = avatarAddedParts[key] or {}
-
+        -- Remove all current accessories, shirts, pants, face
         for _, child in character:GetChildren() do
-            if child:IsA("Accessory") then
-                child.Parent = nil
-                table.insert(avatarHiddenParts[key], child)
+            if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                pcall(function() child:Destroy() end)
+            end
+        end
+        local head = character:FindFirstChild("Head")
+        if head then
+            for _, d in head:GetChildren() do
+                if d:IsA("Decal") and d.Name == "face" then
+                    pcall(function() d:Destroy() end)
+                end
             end
         end
 
+        -- Build model from target description
+        local ok2, model = pcall(function()
+            return Players:CreateHumanoidModelFromDescriptionAsync(desc, humanoid.RigType)
+        end)
+        if not ok2 or not model then return end
+
+        -- Copy accessories using AddAccessory (safe, proper welding)
         for _, child in model:GetChildren() do
             if child:IsA("Accessory") then
                 child.Parent = nil
-                local handle = child:FindFirstChild("Handle")
-                if handle and handle:IsA("BasePart") then
-                    for _, w in handle:GetChildren() do
-                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
-                            w:Destroy()
-                        end
-                    end
-                end
-                pcall(function()
-                    humanoid:AddAccessory(child)
-                end)
-                table.insert(avatarAddedParts[key], child)
+                pcall(function() humanoid:AddAccessory(child) end)
+            elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                child.Parent = character
             end
         end
+
+        -- Copy face
+        local srcHead = model:FindFirstChild("Head")
+        local dstHead = character:FindFirstChild("Head")
+        if srcHead and dstHead then
+            for _, d in srcHead:GetChildren() do
+                if d:IsA("Decal") and d.Name == "face" then
+                    local newFace = d:Clone()
+                    newFace.Parent = dstHead
+                end
+            end
+        end
+
+        -- Copy body colors (safe, doesn't touch mesh)
+        pcall(function()
+            local srcBC = model:FindFirstChildOfClass("BodyColors")
+            local dstBC = character:FindFirstChildOfClass("BodyColors")
+            if srcBC and dstBC then
+                dstBC.HeadColor3 = srcBC.HeadColor3
+                dstBC.TorsoColor3 = srcBC.TorsoColor3
+                dstBC.LeftArmColor3 = srcBC.LeftArmColor3
+                dstBC.RightArmColor3 = srcBC.RightArmColor3
+                dstBC.LeftLegColor3 = srcBC.LeftLegColor3
+                dstBC.RightLegColor3 = srcBC.RightLegColor3
+            end
+        end)
 
         model:Destroy()
     end
 
-    local function restoreAvatarAccessories(character)
-        if not character then return end
-        local key = character:GetFullName()
-
-        local added = avatarAddedParts[key]
-        if added then
-            for _, inst in ipairs(added) do
-                pcall(function() if inst and inst.Parent then inst:Destroy() end end)
-            end
-        end
-        avatarAddedParts[key] = nil
-
-        local hidden = avatarHiddenParts[key]
-        if hidden then
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            for _, inst in ipairs(hidden) do
-                pcall(function()
-                    if inst then
-                        if humanoid then
-                            humanoid:AddAccessory(inst)
-                        else
-                            inst.Parent = character
-                        end
-                    end
-                end)
-            end
-        end
-        avatarHiddenParts[key] = nil
+    local function doApplySpoof(character)
+        if not avatarSpoofUserId then return end
+        if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
+        safeCall(applyAvatarSpoof, character, avatarSpoofUserId)
     end
 
     if Toggles.IS_AvatarSpoof then
         Toggles.IS_AvatarSpoof:OnChanged(function(val)
             if val then
-                local userId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
-                if not userId then return end
+                avatarSpoofUserId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+                if not avatarSpoofUserId then return end
 
                 local char = LocalPlayer.Character
                 if char then
-                    task.spawn(function()
-                        safeCall(applyAvatarAccessories, char, userId)
-                    end)
+                    task.spawn(function() doApplySpoof(char) end)
                 end
 
-                avatarConns[1] = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                avatarConns[1] = LocalPlayer.CharacterAppearanceLoaded:Connect(function(char)
                     task.spawn(function()
-                        task.wait(2)
-                        local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
-                        if uid and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
-                            safeCall(applyAvatarAccessories, newChar, uid)
-                        end
+                        task.wait(0.5)
+                        doApplySpoof(char)
+                    end)
+                end)
+
+                avatarConns[2] = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                    task.spawn(function()
+                        task.wait(3)
+                        doApplySpoof(newChar)
                     end)
                 end)
             else
+                avatarSpoofUserId = nil
                 for _, conn in pairs(avatarConns) do
                     if conn then pcall(function() conn:Disconnect() end) end
                 end
                 avatarConns = {}
-                local char = LocalPlayer.Character
-                if char then
-                    safeCall(restoreAvatarAccessories, char)
-                end
             end
         end)
     end
 
     if Options.IS_AvatarUserId then
         Options.IS_AvatarUserId:OnChanged(function()
-            if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+            avatarSpoofUserId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+            if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value and avatarSpoofUserId then
                 local char = LocalPlayer.Character
                 if char then
-                    task.spawn(function()
-                        safeCall(restoreAvatarAccessories, char)
-                        local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
-                        if uid then
-                            safeCall(applyAvatarAccessories, char, uid)
-                        end
-                    end)
+                    task.spawn(function() doApplySpoof(char) end)
                 end
             end
         end)
