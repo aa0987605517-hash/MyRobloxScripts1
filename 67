@@ -4,6 +4,7 @@ if not source or #source < 1000 then
     warn("[Loader] HttpGet failed or returned incomplete data (" .. tostring(#source) .. " bytes)")
     return
 end
+source = "return (function(...)\n" .. source .. "\nend)(...)"
 local chunk, err = loadstring(source, "=UE")
 if not chunk then
     warn("[Loader] loadstring failed: " .. tostring(err))
