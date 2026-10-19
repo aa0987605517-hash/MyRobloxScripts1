@@ -494222,19 +494222,33 @@ task.spawn(function()
         end
 
         mt.__namecall = newcclosure(function(self, ...)
-            local result = oldNc(self, ...)
-            local ok2 = pcall(function()
-                local method = getnamecallmethod()
-                if method ~= "InvokeServer" then return end
-                if not self:IsA("RemoteFunction") then return end
-                if type(result) ~= "table" then return end
-                pcall(patchTable, result)
-                for k, v in pairs(result) do
-                    if type(v) == "table" then
-                        pcall(patchTable, v)
+            local method = getnamecallmethod()
+            local args = {...}
+
+            local spoofThumb = pcall(function()
+                if method == "GetUserThumbnailAsync" and self == Players then
+                    if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                        local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                        if spoofId and args[1] == LocalPlayer.UserId then
+                            args[1] = spoofId
+                        end
                     end
                 end
             end)
+
+            local result = oldNc(self, unpack(args))
+
+            pcall(function()
+                if method == "InvokeServer" and self:IsA("RemoteFunction") and type(result) == "table" then
+                    pcall(patchTable, result)
+                    for k, v in pairs(result) do
+                        if type(v) == "table" then
+                            pcall(patchTable, v)
+                        end
+                    end
+                end
+            end)
+
             return result
         end)
 
