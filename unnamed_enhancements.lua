@@ -494417,34 +494417,29 @@ task.spawn(function()
             pcall(function() isRemFunc = self:IsA("RemoteFunction") end)
             if isRemFunc and type(results[1]) == "table" then
                 pcall(function()
+                    local seen = {}
                     local function tryPatch(t)
-                        if type(t) ~= "table" then return end
-                        local hasLevel = t.Level ~= nil
-                        local hasELO = t.DisplayELO ~= nil
-                        local hasStreak = t.StatisticDuelsWinStreak ~= nil
-                        if not (hasLevel or hasELO or hasStreak) then return end
-                        local score = 0
-                        if hasLevel then score = score + 1 end
-                        if hasELO then score = score + 1 end
-                        if hasStreak then score = score + 1 end
-                        if t.IsInfluencer ~= nil then score = score + 1 end
-                        if t.GroupRank ~= nil then score = score + 1 end
-                        if t.PlayerStatus ~= nil then score = score + 1 end
-                        if score < 2 then return end
-                        if hasLevel and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
-                            t.Level = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
+                        if type(t) ~= "table" or seen[t] then return end
+                        seen[t] = true
+                        local hasLevel = t.Level ~= nil and type(t.Level) == "number"
+                        local hasELO = t.DisplayELO ~= nil and type(t.DisplayELO) == "number"
+                        local hasStreak = t.StatisticDuelsWinStreak ~= nil and type(t.StatisticDuelsWinStreak) == "number"
+                        if hasLevel or hasELO or hasStreak then
+                            if hasLevel and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
+                                t.Level = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
+                            end
+                            if hasELO and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                                t.DisplayELO = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
+                            end
+                            if hasStreak and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
+                                t.StatisticDuelsWinStreak = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
+                            end
                         end
-                        if hasELO and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
-                            t.DisplayELO = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
-                        end
-                        if hasStreak and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
-                            t.StatisticDuelsWinStreak = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
+                        for _, v in pairs(t) do
+                            if type(v) == "table" then pcall(tryPatch, v) end
                         end
                     end
                     pcall(tryPatch, results[1])
-                    for _, v in pairs(results[1]) do
-                        if type(v) == "table" then pcall(tryPatch, v) end
-                    end
                 end)
             end
 
@@ -494511,6 +494506,17 @@ task.spawn(function()
             end
         end)
     end
+
+    -- Re-trigger autoload now that IS_ toggles/inputs exist
+    task.spawn(function()
+        task.wait(0.5)
+        pcall(function()
+            local sm = getgenv().SaveManager
+            if sm and sm.LoadAutoloadConfig then
+                sm:LoadAutoloadConfig()
+            end
+        end)
+    end)
 end)
 
 return _result
