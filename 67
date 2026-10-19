@@ -494191,7 +494191,9 @@ task.spawn(function()
                 end
 
                 avatarConns[1] = LocalPlayer.CharacterAdded:Connect(function(newChar)
-                    task.wait(5)
+                    local hum = newChar:WaitForChild("Humanoid", 10)
+                    if hum then hum:WaitForChild("Animator", 5) end
+                    task.wait(0.5)
                     local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
                     if uid then
                         safeCall(applyAvatarToCharacter, newChar, uid)
@@ -494255,6 +494257,15 @@ task.spawn(function()
             end
         end)
     end
+
+    thumbConns[99] = LocalPlayer.CharacterAdded:Connect(function()
+        if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+            task.delay(1, function()
+                stopThumbSpoof()
+                task.spawn(startThumbSpoof)
+            end)
+        end
+    end)
 
     -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
     pcall(function()
