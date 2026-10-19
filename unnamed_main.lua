@@ -494318,115 +494318,49 @@ task.spawn(function()
             return
         end
 
-        local spoofed = {}
-        local stashed = {}
+        local key = character:GetFullName()
 
-        for _, child in character:GetChildren() do
-            if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                child.Parent = nil
-                table.insert(stashed, child)
-            end
+        local origDesc
+        pcall(function()
+            origDesc = humanoid:GetAppliedDescription()
+        end)
+        avatarStashed[key] = origDesc
+
+        local desc = model:FindFirstChildOfClass("HumanoidDescription")
+        if not desc then
+            pcall(function()
+                local mHum = model:FindFirstChildOfClass("Humanoid")
+                if mHum then desc = mHum:GetAppliedDescription() end
+            end)
         end
 
-        for _, child in model:GetChildren() do
-            if child:IsA("Accessory") then
-                child.Parent = nil
-                spoofed[child] = true
-
-                local handle = child:FindFirstChild("Handle")
-                if handle and handle:IsA("BasePart") then
-                    for _, w in handle:GetChildren() do
-                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
-                            w:Destroy()
-                        end
-                    end
-
-                    local att = nil
-                    for _, a in handle:GetChildren() do
-                        if a:IsA("Attachment") then att = a; break end
-                    end
-
-                    if att then
-                        local target = nil
-                        for _, part in character:GetChildren() do
-                            if part:IsA("BasePart") then
-                                local found = part:FindFirstChild(att.Name)
-                                if found and found:IsA("Attachment") then
-                                    target = found; break
-                                end
-                            end
-                        end
-
-                        if target then
-                            handle.Anchored = false
-                            local weld = Instance.new("Weld")
-                            weld.Name = "AccessoryWeld"
-                            weld.Part0 = handle
-                            weld.Part1 = target.Parent
-                            weld.C0 = att.CFrame
-                            weld.C1 = target.CFrame
-                            weld.Parent = handle
-                        end
-                    end
-                end
-
-                child.Parent = character
-            elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                spoofed[child] = true
-                child.Parent = character
-            elseif child:IsA("BasePart") then
-                local match = character:FindFirstChild(child.Name)
-                if match and match:IsA("BasePart") then
-                    match.Color = child.Color
-                end
-            end
-        end
-
-        local srcHead = model:FindFirstChild("Head")
-        local dstHead = character:FindFirstChild("Head")
-        if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
-            dstHead.Transparency = srcHead.Transparency
-            local srcFace = srcHead:FindFirstChildOfClass("Decal")
-            local dstFace = dstHead:FindFirstChildOfClass("Decal")
-            if srcFace and dstFace then
-                dstFace.Texture = srcFace.Texture
-            end
-            if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
-                dstHead.MeshId = srcHead.MeshId
-                dstHead.TextureID = srcHead.TextureID
-            end
+        if desc then
+            pcall(function()
+                humanoid:ApplyDescription(desc)
+            end)
         end
 
         model:Destroy()
-
-        local key = character:GetFullName()
-        avatarSpoofedInstances[key] = spoofed
-        avatarStashed[key] = stashed
+        avatarSpoofedInstances[key] = true
     end
 
     local function restoreAvatarOnCharacter(character)
         if not character then return end
         local key = character:GetFullName()
         local spoofed = avatarSpoofedInstances[key]
-        local stashed = avatarStashed[key]
+        local origDesc = avatarStashed[key]
 
-        if spoofed then
-            for inst, _ in pairs(spoofed) do
-                pcall(function() if inst and inst.Parent then inst:Destroy() end end)
-            end
-            avatarSpoofedInstances[key] = nil
+        if spoofed and origDesc then
+            pcall(function()
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:ApplyDescription(origDesc)
+                end
+            end)
         end
 
-        if stashed then
-            for _, child in ipairs(stashed) do
-                pcall(function()
-                    if child and not child.Parent then
-                        child.Parent = character
-                    end
-                end)
-            end
-            avatarStashed[key] = nil
-        end
+        avatarSpoofedInstances[key] = nil
+        avatarStashed[key] = nil
     end
 
     local function watchForTools(character)
