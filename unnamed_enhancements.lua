@@ -494070,7 +494070,34 @@ task.spawn(function()
     local avatarStashed = {}
     local avatarConns = {}
 
+    local function isInMatch()
+        local ok, result = pcall(function()
+            local char = LocalPlayer.Character
+            if char then
+                for _, child in char:GetChildren() do
+                    if child:IsA("Tool") then return true end
+                end
+                local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+                if backpack then
+                    for _, child in backpack:GetChildren() do
+                        if child:IsA("Tool") then return true end
+                    end
+                end
+            end
+            local map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Maps")
+            if map and #map:GetChildren() > 0 then return true end
+            local arena = workspace:FindFirstChild("Arena") or workspace:FindFirstChild("CurrentMap")
+            if arena then return true end
+            return false
+        end)
+        return ok and result == true
+    end
+
     local function applyAvatarToCharacter(character, userId)
+        if isInMatch() then
+            return
+        end
+
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid then
             local start = os.clock()
@@ -494080,6 +494107,8 @@ task.spawn(function()
             until humanoid or (os.clock() - start > 10)
         end
         if not humanoid then return end
+
+        if isInMatch() then return end
 
         local ok, model = pcall(function()
             return Players:CreateHumanoidModelFromDescriptionAsync(
@@ -494178,6 +494207,51 @@ task.spawn(function()
         avatarStashed[key] = stashed
     end
 
+    local function restoreAvatarOnCharacter(character)
+        if not character then return end
+        local key = character:GetFullName()
+        local spoofed = avatarSpoofedInstances[key]
+        local stashed = avatarStashed[key]
+
+        if spoofed then
+            for inst, _ in pairs(spoofed) do
+                pcall(function() if inst and inst.Parent then inst:Destroy() end end)
+            end
+            avatarSpoofedInstances[key] = nil
+        end
+
+        if stashed then
+            for _, child in ipairs(stashed) do
+                pcall(function()
+                    if child and not child.Parent then
+                        child.Parent = character
+                    end
+                end)
+            end
+            avatarStashed[key] = nil
+        end
+    end
+
+    local function watchForTools(character)
+        if not character then return end
+        local function onChildAdded(child)
+            if child:IsA("Tool") then
+                task.defer(function()
+                    safeCall(restoreAvatarOnCharacter, character)
+                end)
+            end
+        end
+        for _, child in character:GetChildren() do
+            if child:IsA("Tool") then
+                task.defer(function()
+                    safeCall(restoreAvatarOnCharacter, character)
+                end)
+                return
+            end
+        end
+        avatarConns[3] = character.ChildAdded:Connect(onChildAdded)
+    end
+
     if Toggles.IS_AvatarSpoof then
         Toggles.IS_AvatarSpoof:OnChanged(function(val)
             if val then
@@ -494188,6 +494262,7 @@ task.spawn(function()
                 if char then
                     task.spawn(function()
                         safeCall(applyAvatarToCharacter, char, userId)
+                        safeCall(watchForTools, char)
                     end)
                 end
 
@@ -494195,6 +494270,7 @@ task.spawn(function()
                     local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
                     if uid and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
                         safeCall(applyAvatarToCharacter, newChar, uid)
+                        safeCall(watchForTools, newChar)
                     end
                 end
 
@@ -494214,6 +494290,10 @@ task.spawn(function()
                     if conn then conn:Disconnect() end
                 end
                 avatarConns = {}
+                local char = LocalPlayer.Character
+                if char then
+                    safeCall(restoreAvatarOnCharacter, char)
+                end
             end
         end)
     end
