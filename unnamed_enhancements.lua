@@ -493876,6 +493876,203 @@ task.spawn(function()
         end)
     end
 
+    -- === SKIN SCANNER ===
+    local skinGroup = miscTab:AddRightGroupbox('Skin Scanner')
+
+    skinGroup:AddButton({
+        Text = 'Scan Skins (ReplicatedStorage)',
+        Func = function()
+            lib:Notify("Scanning skins...", 3)
+            task.spawn(function()
+                local HttpService = game:GetService("HttpService")
+                local RS = game:GetService("ReplicatedStorage")
+
+                local scanOutput = {
+                    timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+                    gameId = game.PlaceId,
+                    sections = {}
+                }
+
+                local function safeName(inst)
+                    local ok, n = pcall(function() return inst.Name end)
+                    return ok and n or "?"
+                end
+
+                local function safeClass(inst)
+                    local ok, c = pcall(function() return inst.ClassName end)
+                    return ok and c or "?"
+                end
+
+                local function scanFolder(folder, label)
+                    if not folder then return end
+                    local section = {label = label, path = folder:GetFullName(), items = {}}
+                    local ok, children = pcall(function() return folder:GetChildren() end)
+                    if not ok or not children then return end
+                    for _, child in ipairs(children) do
+                        pcall(function()
+                            local entry = {
+                                name = safeName(child),
+                                class = safeClass(child),
+                                children = {}
+                            }
+                            local ok2, grand = pcall(function() return child:GetChildren() end)
+                            if ok2 and grand then
+                                for _, g in ipairs(grand) do
+                                    pcall(function()
+                                        table.insert(entry.children, {
+                                            name = safeName(g),
+                                            class = safeClass(g),
+                                        })
+                                    end)
+                                end
+                            end
+                            local ok3, attrs = pcall(function() return child:GetAttributes() end)
+                            if ok3 and attrs and next(attrs) then
+                                entry.attributes = attrs
+                            end
+                            table.insert(section.items, entry)
+                        end)
+                    end
+                    table.insert(scanOutput.sections, section)
+                end
+
+                local candidates = {
+                    {RS:FindFirstChild("Cosmetics"), "Cosmetics"},
+                    {RS:FindFirstChild("Skins"), "Skins"},
+                    {RS:FindFirstChild("Weapons"), "Weapons"},
+                    {RS:FindFirstChild("Items"), "Items"},
+                    {RS:FindFirstChild("Assets"), "Assets"},
+                    {RS:FindFirstChild("Modules"), "Modules"},
+                    {RS:FindFirstChild("Shared"), "Shared"},
+                }
+                for _, pair in ipairs(candidates) do
+                    scanFolder(pair[1], pair[2])
+                end
+
+                local matches = {label = "KeywordMatches (skin/camo/wrap)", path = "ReplicatedStorage", items = {}}
+                local function deepScan(parent, depth)
+                    if depth > 6 then return end
+                    local ok, children = pcall(function() return parent:GetChildren() end)
+                    if not ok or not children then return end
+                    for _, child in ipairs(children) do
+                        pcall(function()
+                            local n = safeName(child):lower()
+                            if n:find("skin") or n:find("camo") or n:find("wrap") or n:find("cosmetic") then
+                                table.insert(matches.items, {
+                                    name = safeName(child),
+                                    class = safeClass(child),
+                                    path = child:GetFullName(),
+                                })
+                            end
+                            deepScan(child, depth + 1)
+                        end)
+                    end
+                end
+                deepScan(RS, 0)
+                table.insert(scanOutput.sections, matches)
+
+                local moduleResults = {label = "RequiredModules", path = "various", items = {}}
+                local function tryRequireNamed(parent, depth)
+                    if depth > 5 then return end
+                    local ok, children = pcall(function() return parent:GetChildren() end)
+                    if not ok then return end
+                    for _, child in ipairs(children) do
+                        pcall(function()
+                            if child:IsA("ModuleScript") then
+                                local n = safeName(child):lower()
+                                if n:find("skin") or n:find("cosmetic") or n:find("camo") or n:find("wrap") or n:find("item") then
+                                    local ok2, data = pcall(require, child)
+                                    if ok2 then
+                                        local okEnc, enc = pcall(function()
+                                            return HttpService:JSONEncode(data)
+                                        end)
+                                        table.insert(moduleResults.items, {
+                                            name = safeName(child),
+                                            path = child:GetFullName(),
+                                            data = okEnc and enc or ("ERR: " .. tostring(enc)),
+                                        })
+                                    end
+                                end
+                            end
+                            tryRequireNamed(child, depth + 1)
+                        end)
+                    end
+                end
+                tryRequireNamed(RS, 0)
+                table.insert(scanOutput.sections, moduleResults)
+
+                local okEnc, encoded = pcall(function()
+                    return HttpService:JSONEncode(scanOutput)
+                end)
+
+                if not okEnc then
+                    lib:Notify("Encode failed: " .. tostring(encoded), 5)
+                    return
+                end
+
+                local totalItems = 0
+                for _, sec in ipairs(scanOutput.sections) do
+                    totalItems = totalItems + #sec.items
+                end
+
+                if writefile then
+                    pcall(function()
+                        writefile("rivals_skins_dump.json", encoded)
+                    end)
+                end
+
+                if setclipboard then
+                    pcall(function()
+                        setclipboard(encoded)
+                    end)
+                end
+
+                local summary = "Scan done! " .. totalItems .. " items found (" .. #encoded .. " bytes)"
+                if writefile then
+                    summary = summary .. "\nSaved: workspace/rivals_skins_dump.json"
+                end
+                if setclipboard then
+                    summary = summary .. "\nCopied to clipboard"
+                end
+                lib:Notify(summary, 8)
+
+                for _, sec in ipairs(scanOutput.sections) do
+                    if #sec.items > 0 then
+                        local names = {}
+                        for i, item in ipairs(sec.items) do
+                            if i <= 10 then
+                                table.insert(names, item.name)
+                            end
+                        end
+                        local extra = #sec.items > 10 and (" +" .. (#sec.items - 10) .. " more") or ""
+                        print("[SkinScanner] " .. sec.label .. ": " .. table.concat(names, ", ") .. extra)
+                    end
+                end
+            end)
+        end,
+        DoubleClick = false,
+    })
+
+    skinGroup:AddButton({
+        Text = 'Copy Last Scan to Clipboard',
+        Func = function()
+            pcall(function()
+                if isfile and isfile("rivals_skins_dump.json") then
+                    local data = readfile("rivals_skins_dump.json")
+                    if setclipboard then
+                        setclipboard(data)
+                        lib:Notify("Copied " .. #data .. " bytes to clipboard", 5)
+                    else
+                        lib:Notify("setclipboard not available", 3)
+                    end
+                else
+                    lib:Notify("No scan data found. Run scan first.", 3)
+                end
+            end)
+        end,
+        DoubleClick = false,
+    })
+
     -- === SPOOF ENGINE ===
     local rawget = rawget
     local rawset = rawset
