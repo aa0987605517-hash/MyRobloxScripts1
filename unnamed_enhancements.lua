@@ -494190,14 +494190,23 @@ task.spawn(function()
                     end)
                 end
 
+                local function onNewChar(newChar)
+                    local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+                    if uid and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                        safeCall(applyAvatarToCharacter, newChar, uid)
+                    end
+                end
+
                 avatarConns[1] = LocalPlayer.CharacterAdded:Connect(function(newChar)
                     local hum = newChar:WaitForChild("Humanoid", 10)
                     if hum then hum:WaitForChild("Animator", 5) end
+                    task.wait(1)
+                    onNewChar(newChar)
+                end)
+
+                avatarConns[2] = LocalPlayer.CharacterAppearanceLoaded:Connect(function(char)
                     task.wait(0.5)
-                    local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
-                    if uid then
-                        safeCall(applyAvatarToCharacter, newChar, uid)
-                    end
+                    onNewChar(char)
                 end)
             else
                 for _, conn in pairs(avatarConns) do
