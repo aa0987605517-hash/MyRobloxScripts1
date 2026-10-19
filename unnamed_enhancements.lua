@@ -494202,64 +494202,61 @@ task.spawn(function()
     end
 
     -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
+    local thumbSpoofRunning = false
     local thumbConns = {}
-    local localThumbPatterns = {}
 
-    local function buildThumbPatterns()
-        local uid = tostring(LocalPlayer.UserId)
-        localThumbPatterns = {
-            "rbxthumb://type=AvatarHeadShot&id=" .. uid,
-            "rbxthumb://type=AvatarThumbnail&id=" .. uid,
-            "rbxthumb://type=Avatar&id=" .. uid,
-        }
-    end
-
-    local function getSpoofThumbUrl(originalUrl, spoofId)
-        for _, pat in ipairs(localThumbPatterns) do
-            if string.find(originalUrl, pat, 1, true) then
-                return string.gsub(originalUrl, "id=" .. tostring(LocalPlayer.UserId), "id=" .. tostring(spoofId))
-            end
-        end
-        return nil
-    end
-
-    local function spoofDescendantThumbs(root, spoofId)
+    local function replaceThumb(obj, myId, spoofId)
         pcall(function()
-            for _, obj in ipairs(root:GetDescendants()) do
-                pcall(function()
-                    if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
-                        local newUrl = getSpoofThumbUrl(obj.Image, spoofId)
-                        if newUrl then
-                            obj.Image = newUrl
-                        end
-                    end
-                end)
+            if not (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) then return end
+            local img = obj.Image
+            if type(img) ~= "string" or img == "" then return end
+            if string.find(img, tostring(myId), 1, true) then
+                obj.Image = string.gsub(img, tostring(myId), tostring(spoofId))
             end
         end)
     end
 
     local function startThumbSpoof()
-        buildThumbPatterns()
         local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
         if not spoofId then return end
+        local myId = LocalPlayer.UserId
+        thumbSpoofRunning = true
 
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            spoofDescendantThumbs(playerGui, spoofId)
-            thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
-                task.defer(function()
-                    pcall(function()
-                        if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
-                            local newUrl = getSpoofThumbUrl(obj.Image, spoofId)
-                            if newUrl then obj.Image = newUrl end
-                        end
-                    end)
-                end)
+        if not playerGui then return end
+
+        thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
+            task.delay(0.1, function()
+                if thumbSpoofRunning then
+                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if sid then replaceThumb(obj, myId, sid) end
+                end
             end)
-        end
+        end)
+
+        task.spawn(function()
+            while thumbSpoofRunning do
+                pcall(function()
+                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if not sid then return end
+                    for _, obj in ipairs(playerGui:GetDescendants()) do
+                        if not thumbSpoofRunning then break end
+                        pcall(function()
+                            if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
+                                if string.find(obj.Image, tostring(myId), 1, true) then
+                                    obj.Image = string.gsub(obj.Image, tostring(myId), tostring(sid))
+                                end
+                            end
+                        end)
+                    end
+                end)
+                task.wait(0.5)
+            end
+        end)
     end
 
     local function stopThumbSpoof()
+        thumbSpoofRunning = false
         for _, conn in pairs(thumbConns) do
             if conn then pcall(function() conn:Disconnect() end) end
         end
@@ -494267,7 +494264,6 @@ task.spawn(function()
     end
 
     if Toggles.IS_AvatarSpoof then
-        local origOnChanged = nil
         Toggles.IS_AvatarSpoof:OnChanged(function(val)
             if val then
                 task.spawn(startThumbSpoof)
