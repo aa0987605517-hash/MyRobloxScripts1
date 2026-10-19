@@ -259,7 +259,7 @@ local ok, err = pcall(function()
     local source = game:HttpGet('https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/claude/game-scripts-modifications-3si52n/67')
     local chunk, compileError = loadstring(source, '=UE Auto Load')
     assert(type(chunk) == 'function', compileError or 'UE compilation failed')
-    local result = chunk(env)
+    local result = chunk()
     if type(result) == 'table' and result.status == 'error' then
         error(result.error or 'UE initialization failed', 0)
     end
