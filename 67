@@ -494257,45 +494257,62 @@ task.spawn(function()
         if not oldNc then return end
         setreadonly(mt, false)
 
+        local function isProfileData(t)
+            local count = 0
+            if t.Level ~= nil then count = count + 1 end
+            if t.DisplayELO ~= nil then count = count + 1 end
+            if t.StatisticDuelsWinStreak ~= nil then count = count + 1 end
+            if t.IsInfluencer ~= nil then count = count + 1 end
+            if t.GroupRank ~= nil then count = count + 1 end
+            if t.PlayerStatus ~= nil then count = count + 1 end
+            return count >= 2
+        end
+
         local function patchTable(t)
+            if not isProfileData(t) then return end
             if t.Level ~= nil and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
-                t.Level = Options.IS_LevelValue and Options.IS_LevelValue.Value or 100
+                t.Level = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
             end
             if t.DisplayELO ~= nil and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
-                t.DisplayELO = Options.IS_EloValue and Options.IS_EloValue.Value or 2000
+                t.DisplayELO = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
             end
             if t.StatisticDuelsWinStreak ~= nil and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
-                t.StatisticDuelsWinStreak = Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50
+                t.StatisticDuelsWinStreak = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
             end
         end
 
         mt.__namecall = newcclosure(function(self, ...)
             local method = getnamecallmethod()
-            local args = {...}
 
-            local spoofThumb = pcall(function()
-                if method == "GetUserThumbnailAsync" and self == Players then
-                    if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
-                        local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                        if spoofId and args[1] == LocalPlayer.UserId then
-                            args[1] = spoofId
-                        end
+            if method == "GetUserThumbnailAsync" then
+                local ok3, newResult = pcall(function()
+                    if self ~= Players then return nil end
+                    if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return nil end
+                    local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    local args = {...}
+                    if spoofId and args[1] == LocalPlayer.UserId then
+                        args[1] = spoofId
+                        return oldNc(self, unpack(args))
                     end
-                end
-            end)
+                    return nil
+                end)
+                if ok3 and newResult ~= nil then return newResult end
+            end
 
-            local result = oldNc(self, unpack(args))
+            local result = oldNc(self, ...)
 
-            pcall(function()
-                if method == "InvokeServer" and self:IsA("RemoteFunction") and type(result) == "table" then
+            if method == "InvokeServer" then
+                pcall(function()
+                    if not self:IsA("RemoteFunction") then return end
+                    if type(result) ~= "table" then return end
                     pcall(patchTable, result)
                     for k, v in pairs(result) do
                         if type(v) == "table" then
                             pcall(patchTable, v)
                         end
                     end
-                end
-            end)
+                end)
+            end
 
             return result
         end)
