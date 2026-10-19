@@ -15380,15 +15380,10 @@ index2.new = function(arg, parent, arg2, arg3, arg4)
 local rail = v117.get().Rail
 local instance = Instance.new(v86[92])
 instance.BackgroundTransparency = 1
-instance.Size = UDim2.fromOffset(rail.TabSize, rail.TabSize)
+instance.Size = UDim2.fromOffset(80, 34)
 instance.BorderSizePixel = 0
 instance.Text = ""
 instance.TextTransparency = v86[63]
-
-if not rail.ShowLabels then
-instance.Text = arg4.Label
-end
-
 instance.AutoButtonColor = false
 arg3:Bind(instance, v86[5], "TabButtonSelected")
 instance.Parent = parent
@@ -15397,26 +15392,21 @@ imageLabel.AnchorPoint = Vector2.new(v86[101], 0.5)
 imageLabel.Image = arg4.Icon
 imageLabel.BackgroundTransparency = 1
 imageLabel.Position = UDim2.fromScale(v86[101], 0.5)
-imageLabel.Size = UDim2.fromOffset(rail.TabIconSize, rail.TabIconSize)
-
-if rail.ShowLabels then
-imageLabel.AnchorPoint = Vector2.new(0.5, v86[186])
-imageLabel.Position = UDim2.new(0.5, 0, 0, 10)
-end
-
+imageLabel.Size = UDim2.fromOffset(0, 0)
+imageLabel.Visible = false
 imageLabel.BorderSizePixel = 0
 imageLabel.ImageColor3 = v118.get("Unselected")
 imageLabel.Parent = instance
 local textLabel = Instance.new("TextLabel")
-textLabel.AnchorPoint = Vector2.new(0.5, 1)
-textLabel.Position = UDim2.new(0.5, v86[186], 1, -6)
-textLabel.Size = UDim2.new(1, -4, 0, 14)
-textLabel.Visible = rail.ShowLabels
+textLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+textLabel.Position = UDim2.fromScale(0.5, 0.5)
+textLabel.Size = UDim2.new(1, -4, 1, 0)
+textLabel.Visible = true
 textLabel.BackgroundTransparency = 1
 textLabel.BorderSizePixel = 0
 textLabel.Text = arg4.Label
 textLabel.TextColor3 = v118.get("Unselected")
-textLabel.TextSize = 10
+textLabel.TextSize = 13
 textLabel.FontFace = v116.Bold
 textLabel.TextTruncate = Enum.TextTruncate.AtEnd
 textLabel.TextXAlignment = Enum.TextXAlignment.Center
@@ -15504,26 +15494,29 @@ index2.__index = index2
 index2.new = function(arg, parent, arg2, arg3, image)
 local rail = v116.get().Rail
 local frame = Instance.new("Frame")
-frame.BackgroundTransparency = v86[63]
-frame.Size = UDim2.new(0, rail.Width, 1, 0)
+frame.BackgroundTransparency = 0
+frame.Size = UDim2.new(1, 0, 0, 40)
+frame.Position = UDim2.fromOffset(0, 24)
 frame.BorderSizePixel = 0
+frame.ZIndex = 5
 arg3:Bind(frame, "BackgroundColor3", v86[168])
 frame.Parent = parent
 local instance = Instance.new(v86[128])
 instance.BackgroundTransparency = 0
 instance.ZIndex = -1
-instance.Size = UDim2.fromScale(1, v86[63])
-instance.BorderSizePixel = v86[186]
+instance.Size = UDim2.fromScale(1, 1)
+instance.BorderSizePixel = 0
 instance.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 instance.Parent = frame
 local uiGradient = Instance.new("UIGradient")
-uiGradient.Rotation = 90
+uiGradient.Rotation = 0
 v115.bindSurfaceGradient(arg3, uiGradient, { v86[134], "GradientMid", "GradientDark" })
 uiGradient.Parent = instance
 local frame2 = Instance.new("Frame")
-frame2.BackgroundColor3 = Color3.fromRGB(255, 255, v86[108])
-frame2.Size = UDim2.new(1, v86[186], 0, rail.HeaderHeight)
+frame2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+frame2.Size = UDim2.new(0, 0, 0, 0)
 frame2.BorderSizePixel = 0
+frame2.Visible = false
 frame2.Parent = frame
 local instance2 = Instance.new(v86[46])
 instance2.Rotation = 90
@@ -15534,8 +15527,9 @@ imageLabel.AnchorPoint = Vector2.new(v86[101], 0.5)
 imageLabel.Image = image
 imageLabel.BackgroundTransparency = 1
 imageLabel.Position = UDim2.fromScale(v86[101], v86[101])
-imageLabel.Size = UDim2.fromOffset(rail.LogoSize.X, rail.LogoSize.Y)
+imageLabel.Size = UDim2.fromOffset(0, 0)
 imageLabel.BorderSizePixel = v86[186]
+imageLabel.Visible = false
 if image ~= nil and image == K.LithiumLogo then
 imageLabel.ScaleType = Enum.ScaleType.Fit
 arg3:Bind(imageLabel, v86[156], "Outline")
@@ -15544,11 +15538,11 @@ arg3:Bind(imageLabel, v86[156], "Accent")
 end
 imageLabel.Parent = frame2
 local frame3 = Instance.new("Frame")
-frame3.Position = UDim2.new(0, 0, v86[63], -v86[63])
-frame3.Size = UDim2.new(v86[63], 0, 0, v86[63])
+frame3.Position = UDim2.new(0, 0, 1, -1)
+frame3.Size = UDim2.new(1, 0, 0, 1)
 frame3.BorderSizePixel = 0
 arg3:Bind(frame3, v86[5], "Accent")
-frame3.Parent = frame2
+frame3.Parent = frame
 local uiGradient2 = Instance.new("UIGradient")
 local numberSequence = NumberSequence.new
 local tbl18 = {}
@@ -15570,12 +15564,12 @@ uiGradient2.Parent = frame3
 v115.addGlow(arg3, frame3, { Amount = 2, DampingFactor = 0.78 })
 local instance3 = Instance.new(v86[64])
 instance3.BackgroundTransparency = v86[63]
-instance3.Position = UDim2.fromOffset(0, rail.TabsTop)
-instance3.Size = UDim2.new(v86[63], v86[186], v86[63], -rail.TabsTop)
+instance3.Position = UDim2.fromOffset(4, 2)
+instance3.Size = UDim2.new(1, -8, 1, -4)
 instance3.BorderSizePixel = 0
-instance3.AutomaticCanvasSize = Enum.AutomaticSize.Y
+instance3.AutomaticCanvasSize = Enum.AutomaticSize.X
 instance3.CanvasSize = UDim2.fromOffset(0, 0)
-instance3.ScrollingDirection = Enum.ScrollingDirection.Y
+instance3.ScrollingDirection = Enum.ScrollingDirection.X
 instance3.ScrollBarImageTransparency = 1
 instance3.ScrollBarThickness = 0
 instance3.ElasticBehavior = Enum.ElasticBehavior.Never
@@ -15584,32 +15578,33 @@ arg3:Bind(instance3, v86[154], v86[139])
 instance3.Parent = frame
 local frame4 = Instance.new("Frame")
 frame4.BackgroundTransparency = v86[63]
-frame4.Size = UDim2.fromScale(1, 0)
-frame4.AutomaticSize = Enum.AutomaticSize.Y
+frame4.Size = UDim2.new(0, 0, 1, 0)
+frame4.AutomaticSize = Enum.AutomaticSize.X
 frame4.BorderSizePixel = 0
 frame4.Parent = instance3
 local instance4 = Instance.new(v86[4])
-instance4.Padding = UDim.new(0, rail.TabGap)
-instance4.HorizontalAlignment = Enum.HorizontalAlignment.Center
+instance4.Padding = UDim.new(0, 4)
+instance4.FillDirection = Enum.FillDirection.Horizontal
+instance4.VerticalAlignment = Enum.VerticalAlignment.Center
 instance4.SortOrder = Enum.SortOrder.LayoutOrder
 instance4.Parent = frame4
 local frame5 = Instance.new("Frame")
 frame5.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 frame5.BorderSizePixel = 0
-frame5.Size = UDim2.fromOffset(rail.TabSize, rail.TabSize)
-frame5.Position = UDim2.fromScale(v86[101], v86[186])
-frame5.AnchorPoint = Vector2.new(v86[101], 0)
+frame5.Size = UDim2.fromOffset(80, 34)
+frame5.Position = UDim2.fromOffset(0, 3)
+frame5.AnchorPoint = Vector2.new(0, 0)
 frame5.Visible = false
 frame5.ZIndex = 0
 frame5.Parent = instance3
 local instance5 = Instance.new(v86[46])
-instance5.Rotation = v86[45]
+instance5.Rotation = 0
 arg3:BindGradient(instance5, { "TabHighlight", "TabButtonSelected", v86[191] }, { 0, 0.5, 1 })
 instance5.Parent = frame5
 local instance6 = Instance.new(v86[98])
-instance6.CornerRadius = UDim.new(0, 6)
+instance6.CornerRadius = UDim.new(0, 4)
 instance6.Parent = frame5
-v117.attachOverflowCues(arg2, arg3, instance3, frame, v86[197])
+v117.attachOverflowCues(arg2, arg3, instance3, frame, "X")
 
 return setmetatable({
 _trove = arg2,
@@ -15630,8 +15625,9 @@ index2.MoveIndicator = function(arg, arg2)
 local indicator = arg._indicator
 
 if not (n26 >= 4814) then
-local udim2 = UDim2.new(v86[101], 0, 0, arg2.AbsolutePosition.Y - arg._holder.AbsolutePosition.Y)
-v117.scrollIntoView(arg._scroll, arg2, "Y")
+local udim2 = UDim2.fromOffset(arg2.AbsolutePosition.X - arg._holder.AbsolutePosition.X, 3)
+indicator.Size = UDim2.fromOffset(arg2.AbsoluteSize.X, 34)
+pcall(function() v117.scrollIntoView(arg._scroll, arg2, "X") end)
 
 if not indicator.Visible then
 indicator.Position = udim2
@@ -15682,13 +15678,14 @@ local v122 = v120.newBatch(v121)
 local v123 = v117.get()
 local outerInset = v123.Page.OuterInset
 local n = v123.Rail.Width + outerInset
+local _topBarH = 64
 local v124 = arg2.Panel:AddButton(v121, { Label = arg4.Label, Icon = arg4.Icon or "rbxassetid://108815781932261" })
 local canvasGroup = Instance.new("CanvasGroup")
 canvasGroup.BackgroundTransparency = 1
 canvasGroup.GroupTransparency = v86[186]
 canvasGroup.Visible = false
-canvasGroup.Position = UDim2.fromOffset(n, outerInset)
-canvasGroup.Size = UDim2.new(1, -n - outerInset, 1, -outerInset * 2)
+canvasGroup.Position = UDim2.fromOffset(outerInset, _topBarH + outerInset)
+canvasGroup.Size = UDim2.new(1, -outerInset * 2, 1, -_topBarH - outerInset * 2)
 canvasGroup.BorderSizePixel = v86[186]
 canvasGroup.Parent = arg2.MenuFrame
 
@@ -16651,10 +16648,26 @@ uiStroke.Parent = instance4
 v115.addGlow(v125, instance4, { Amount = 2, DampingFactor = 0.78 })
 local v133 = v119.new(arg, frame, v124, v125, arg3.Icon)
 local width = v116.get().Rail.Width
+local _titleLabel = Instance.new("TextLabel")
+_titleLabel.Size = UDim2.new(1, 0, 0, 24)
+_titleLabel.Position = UDim2.fromOffset(0, 0)
+_titleLabel.BackgroundTransparency = 0.2
+_titleLabel.BorderSizePixel = 0
+_titleLabel.Text = arg3.Title or "Kiciahook V2 | Rivals"
+_titleLabel.TextSize = 14
+_titleLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
+_titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+_titleLabel.ZIndex = 10
+v125:Bind(_titleLabel, "TextColor3", "TextColor")
+v125:Bind(_titleLabel, "BackgroundColor3", "GradientTop")
+_titleLabel.Parent = frame
+local _titlePad = Instance.new("UIPadding")
+_titlePad.PaddingLeft = UDim.new(0, 10)
+_titlePad.Parent = _titleLabel
 local frame3 = Instance.new("Frame")
 frame3.BackgroundTransparency = 1
-frame3.Position = UDim2.fromOffset(width, v86[186])
-frame3.Size = UDim2.new(1, -width, 1, 0)
+frame3.Position = UDim2.fromOffset(0, 24)
+frame3.Size = UDim2.new(1, 0, 1, -24)
 frame3.BorderSizePixel = 0
 v125:Bind(frame3, "BackgroundColor3", "Background")
 frame3.Parent = frame
