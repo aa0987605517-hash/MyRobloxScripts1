@@ -493681,36 +493681,33 @@ task.spawn(function()
         Text = 'Spoof Level',
         Default = false,
     })
-    infoGroup:AddSlider('IS_LevelValue', {
+    infoGroup:AddInput('IS_LevelValue', {
         Text = 'Level',
-        Default = 100,
-        Min = 0,
-        Max = 1000,
-        Rounding = 0,
+        Default = '100',
+        Placeholder = '0-1000',
+        Numeric = true,
     })
 
     infoGroup:AddToggle('IS_EloSpoof', {
         Text = 'Spoof Ranked ELO',
         Default = false,
     })
-    infoGroup:AddSlider('IS_EloValue', {
+    infoGroup:AddInput('IS_EloValue', {
         Text = 'ELO',
-        Default = 2000,
-        Min = 0,
-        Max = 10000,
-        Rounding = 0,
+        Default = '2000',
+        Placeholder = '0-10000',
+        Numeric = true,
     })
 
     infoGroup:AddToggle('IS_WinstreakSpoof', {
         Text = 'Spoof Winstreak',
         Default = false,
     })
-    infoGroup:AddSlider('IS_WinstreakValue', {
+    infoGroup:AddInput('IS_WinstreakValue', {
         Text = 'Winstreak',
-        Default = 50,
-        Min = 0,
-        Max = 9999,
-        Rounding = 0,
+        Default = '50',
+        Placeholder = '0-9999',
+        Numeric = true,
     })
 
     -- === BADGE SPOOF ===
@@ -493997,9 +493994,9 @@ task.spawn(function()
 
     -- Attribute-to-toggle mapping
     local ATTR_MAP = {
-        IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50 end },
-        IS_LevelSpoof     = { attr = "Level", getValue = function() return Options.IS_LevelValue and Options.IS_LevelValue.Value or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
-        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return Options.IS_EloValue and Options.IS_EloValue.Value or 2000 end, leaderstat = {"CustomLeaderstats", "Current ELO"} },
+        IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50 end },
+        IS_LevelSpoof     = { attr = "Level", getValue = function() return tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
+        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000 end, leaderstat = {"CustomLeaderstats", "Current ELO"} },
         IS_NametagStatus  = { attr = "PlayerStatus", getValue = function() return Options.IS_NametagType and Options.IS_NametagType.Value or "Prime" end },
         IS_Influencer     = { attr = "IsInfluencer", getValue = function() return true end },
         IS_RobloxEmployee = { attr = "IsRobloxEmployee", getValue = function() return true end },
