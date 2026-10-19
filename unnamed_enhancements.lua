@@ -493617,4 +493617,387 @@ function Backend.loadProgramData()
     return data
 end
 
-return runApplication()
+local _result = runApplication()
+
+------------------------------------------------------------------------
+-- IDENTITY SPOOF MODULE (injected into Misc tab)
+------------------------------------------------------------------------
+task.spawn(function()
+    local sharedEnv = getgenv and getgenv() or _G
+    local Players = cloneref(game:GetService("Players"))
+    local LocalPlayer = Players.LocalPlayer
+
+    -- Wait for Library to be ready
+    local lib
+    for i = 1, 100 do
+        lib = rawget(sharedEnv, 'Library')
+        if lib and lib.Window then break end
+        task.wait(0.1)
+    end
+    if not lib or not lib.Window then return end
+
+    -- Find the Misc tab
+    local miscTab
+    for name, tab in pairs(lib.Window.Tabs) do
+        if tostring(name):lower() == 'misc' then
+            miscTab = tab
+            break
+        end
+    end
+    if not miscTab then return end
+
+    local Options = rawget(sharedEnv, 'Options') or {}
+    local Toggles = rawget(sharedEnv, 'Toggles') or {}
+
+    -- Create Identity Spoof groupbox
+    local spoofGroup = miscTab:AddLeftGroupbox('Identity Spoof')
+
+    -- === DEVICE SPOOF ===
+    spoofGroup:AddToggle('IS_DeviceSpoof', {
+        Text = 'Device Spoof',
+        Default = false,
+    })
+    spoofGroup:AddDropdown('IS_DeviceType', {
+        Text = 'Device Type',
+        Values = {'Keyboard', 'Gamepad', 'Touch'},
+        Default = 1,
+    })
+
+    -- === PLAYER INFO SPOOF ===
+    local infoGroup = miscTab:AddRightGroupbox('Player Info Spoof')
+
+    infoGroup:AddToggle('IS_NameSpoof', {
+        Text = 'Spoof Name',
+        Default = false,
+    })
+    infoGroup:AddInput('IS_NameValue', {
+        Default = '',
+        Placeholder = 'Display Name',
+        Numeric = false,
+    })
+
+    infoGroup:AddToggle('IS_LevelSpoof', {
+        Text = 'Spoof Level',
+        Default = false,
+    })
+    infoGroup:AddSlider('IS_LevelValue', {
+        Text = 'Level',
+        Default = 100,
+        Min = 0,
+        Max = 1000,
+        Rounding = 0,
+    })
+
+    infoGroup:AddToggle('IS_EloSpoof', {
+        Text = 'Spoof Ranked ELO',
+        Default = false,
+    })
+    infoGroup:AddSlider('IS_EloValue', {
+        Text = 'ELO',
+        Default = 2000,
+        Min = 0,
+        Max = 10000,
+        Rounding = 0,
+    })
+
+    infoGroup:AddToggle('IS_WinstreakSpoof', {
+        Text = 'Spoof Winstreak',
+        Default = false,
+    })
+    infoGroup:AddSlider('IS_WinstreakValue', {
+        Text = 'Winstreak',
+        Default = 50,
+        Min = 0,
+        Max = 9999,
+        Rounding = 0,
+    })
+
+    -- === BADGE SPOOF ===
+    local badgeGroup = miscTab:AddLeftGroupbox('Badge Spoof')
+
+    badgeGroup:AddToggle('IS_NametagStatus', {
+        Text = 'Spoof Nametag',
+        Default = false,
+    })
+    badgeGroup:AddDropdown('IS_NametagType', {
+        Text = 'Nametag Type',
+        Values = {'Prime', 'Contraband'},
+        Default = 1,
+    })
+
+    badgeGroup:AddToggle('IS_Influencer', {
+        Text = 'Influencer Badge',
+        Default = false,
+    })
+    badgeGroup:AddToggle('IS_RobloxEmployee', {
+        Text = 'Roblox Employee Badge',
+        Default = false,
+    })
+    badgeGroup:AddToggle('IS_NosniyTeam', {
+        Text = 'Nosniy Team Badge',
+        Default = false,
+    })
+
+    -- === PING SPOOF ===
+    badgeGroup:AddToggle('IS_PingSpoof', {
+        Text = 'Spoof Ping',
+        Default = false,
+    })
+    badgeGroup:AddDropdown('IS_PingType', {
+        Text = 'Ping Level',
+        Values = {'Low', 'Medium', 'High'},
+        Default = 1,
+    })
+
+    -- === SPOOF ENGINE ===
+    local rawget = rawget
+    local rawset = rawset
+    local pcall = pcall
+
+    local function safeCall(fn, ...)
+        local ok, err = pcall(fn, ...)
+        if not ok then warn("[IdentitySpoof]", err) end
+        return ok
+    end
+
+    -- Attribute guard system
+    local attrGuards = {}
+
+    local function guardAttribute(player, attribute)
+        local key = tostring(player.UserId) .. ":" .. attribute
+        if attrGuards[key] then return attrGuards[key] end
+
+        local original = player:GetAttribute(attribute)
+        local isWriting = false
+        local spoofed = nil
+
+        local conn = player:GetAttributeChangedSignal(attribute):Connect(function()
+            if isWriting then return end
+            original = player:GetAttribute(attribute)
+            if spoofed ~= nil then
+                isWriting = true
+                player:SetAttribute(attribute, spoofed)
+                isWriting = false
+            end
+        end)
+
+        local guard = {
+            Set = function(_, val)
+                spoofed = val
+                isWriting = true
+                player:SetAttribute(attribute, val or original)
+                isWriting = false
+            end,
+            Restore = function(_)
+                spoofed = nil
+                isWriting = true
+                player:SetAttribute(attribute, original)
+                isWriting = false
+            end,
+            Destroy = function(_)
+                conn:Disconnect()
+                pcall(function() player:SetAttribute(attribute, original) end)
+                attrGuards[key] = nil
+            end,
+        }
+
+        attrGuards[key] = guard
+        return guard
+    end
+
+    -- Leaderstat spoof system
+    local leaderstatEntries = {}
+
+    local function applyLeaderstat(player, value)
+        local key = player.UserId
+        if leaderstatEntries[key] then return end
+
+        task.spawn(function()
+            local current = player
+            for _, name in ipairs({"CustomLeaderstats", "Current ELO"}) do
+                local child = current:FindFirstChild(name)
+                if not child then
+                    local start = os.clock()
+                    repeat
+                        child = current:FindFirstChild(name)
+                        if child then break end
+                        task.wait(0.1)
+                    until child or (os.clock() - start > 10)
+                end
+                if not child then return end
+                current = child
+            end
+
+            local stat = current
+            local original = stat.Value
+            local isWriting = false
+
+            local conn = stat:GetPropertyChangedSignal("Value"):Connect(function()
+                if isWriting then return end
+                original = stat.Value
+                if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                    isWriting = true
+                    stat.Value = Options.IS_EloValue and Options.IS_EloValue.Value or 2000
+                    isWriting = false
+                end
+            end)
+
+            leaderstatEntries[key] = {
+                Stat = stat,
+                Original = original,
+                Connection = conn,
+            }
+
+            if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                isWriting = true
+                stat.Value = Options.IS_EloValue and Options.IS_EloValue.Value or 2000
+                isWriting = false
+            end
+        end)
+    end
+
+    -- Apply attribute spoofs to a player
+    local function applyAttributeSpoofs(player)
+        if Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
+            guardAttribute(player, "StatisticDuelsWinStreak"):Set(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50)
+        end
+        if Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
+            guardAttribute(player, "Level"):Set(Options.IS_LevelValue and Options.IS_LevelValue.Value or 100)
+        end
+        if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+            guardAttribute(player, "DisplayELO"):Set(Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
+            applyLeaderstat(player, Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
+        end
+        if Toggles.IS_NametagStatus and Toggles.IS_NametagStatus.Value then
+            local val = Options.IS_NametagType and Options.IS_NametagType.Value or "Prime"
+            guardAttribute(player, "PlayerStatus"):Set(val)
+        end
+        if Toggles.IS_Influencer and Toggles.IS_Influencer.Value then
+            guardAttribute(player, "IsInfluencer"):Set(true)
+        end
+        if Toggles.IS_RobloxEmployee and Toggles.IS_RobloxEmployee.Value then
+            guardAttribute(player, "IsRobloxEmployee"):Set(true)
+        end
+        if Toggles.IS_NosniyTeam and Toggles.IS_NosniyTeam.Value then
+            guardAttribute(player, "GroupRank"):Set(255)
+        end
+    end
+
+    -- Toggle callbacks
+    local spoofConnection
+    local function startSpoofing()
+        for _, player in Players:GetPlayers() do
+            safeCall(applyAttributeSpoofs, player)
+        end
+        if not spoofConnection then
+            spoofConnection = Players.PlayerAdded:Connect(function(player)
+                task.wait(1)
+                safeCall(applyAttributeSpoofs, player)
+            end)
+        end
+    end
+
+    local function stopSpoofing()
+        if spoofConnection then
+            spoofConnection:Disconnect()
+            spoofConnection = nil
+        end
+        for _, guard in pairs(attrGuards) do
+            guard:Destroy()
+        end
+        attrGuards = {}
+        for _, entry in pairs(leaderstatEntries) do
+            entry.Connection:Disconnect()
+            pcall(function() entry.Stat.Value = entry.Original end)
+        end
+        leaderstatEntries = {}
+    end
+
+    -- Wire up toggle callbacks
+    local spoofToggles = {
+        'IS_WinstreakSpoof', 'IS_LevelSpoof', 'IS_EloSpoof',
+        'IS_NametagStatus', 'IS_Influencer', 'IS_RobloxEmployee', 'IS_NosniyTeam',
+    }
+
+    for _, toggleName in ipairs(spoofToggles) do
+        if Toggles[toggleName] then
+            Toggles[toggleName]:OnChanged(function(val)
+                if val then
+                    startSpoofing()
+                end
+            end)
+        end
+    end
+
+    -- Slider/dropdown change callbacks to re-apply
+    local function reapply()
+        for _, player in Players:GetPlayers() do
+            safeCall(applyAttributeSpoofs, player)
+        end
+    end
+
+    if Options.IS_WinstreakValue then Options.IS_WinstreakValue:OnChanged(reapply) end
+    if Options.IS_LevelValue then Options.IS_LevelValue:OnChanged(reapply) end
+    if Options.IS_EloValue then Options.IS_EloValue:OnChanged(reapply) end
+    if Options.IS_NametagType then Options.IS_NametagType:OnChanged(reapply) end
+
+    -- Ping spoof
+    local PING_RANGES = {
+        Low    = {150, 160},
+        Medium = {60, 75},
+        High   = {17, 25},
+    }
+    local pingRestore = nil
+
+    if Toggles.IS_PingSpoof then
+        Toggles.IS_PingSpoof:OnChanged(function(val)
+            if val then
+                pcall(function()
+                    for _, module in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+                        if module:IsA("ModuleScript") then
+                            local success, loaded = pcall(require, module)
+                            if success and type(loaded) == "table" and loaded.Utility then
+                                local utility = loaded.Utility
+                                local mt = getmetatable(utility)
+                                if not mt then return end
+                                local idx = rawget(mt, "__index")
+                                if type(idx) ~= "table" then return end
+                                local original = rawget(idx, "GetLocalConnectionPing")
+                                if type(original) ~= "function" then return end
+
+                                local upIdx, origPlayers
+                                for k, v in debug.getupvalues(original) do
+                                    if typeof(v) == "Instance" and v:IsA("Players") then
+                                        upIdx = k
+                                        origPlayers = v
+                                        break
+                                    end
+                                end
+                                if not upIdx then return end
+
+                                local pingType = Options.IS_PingType and Options.IS_PingType.Value or "Low"
+                                local range = PING_RANGES[pingType] or PING_RANGES.Low
+
+                                debug.setupvalue(original, upIdx, {
+                                    LocalPlayer = {
+                                        GetNetworkPing = function()
+                                            return math.random(range[1], range[2]) / 1000
+                                        end,
+                                    },
+                                })
+
+                                pingRestore = {Fn = original, Index = upIdx, Original = origPlayers}
+                                break
+                            end
+                        end
+                    end
+                end)
+            elseif pingRestore then
+                debug.setupvalue(pingRestore.Fn, pingRestore.Index, pingRestore.Original)
+                pingRestore = nil
+            end
+        end)
+    end
+end)
+
+return _result
