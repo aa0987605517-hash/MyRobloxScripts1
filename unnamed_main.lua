@@ -494316,15 +494316,15 @@ task.spawn(function()
             if not ok then return oldNc(self, ...) end
 
             if method == "GetUserThumbnailAsync" then
+                local thumbArgs = {...}
                 local ok2, res = pcall(function()
                     if self ~= Players then return end
                     if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
                     local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
                     if not spoofId then return end
-                    local args = {...}
-                    if args[1] == LocalPlayer.UserId then
-                        args[1] = spoofId
-                        return {oldNc(self, unpack(args))}
+                    if thumbArgs[1] == LocalPlayer.UserId then
+                        thumbArgs[1] = spoofId
+                        return {oldNc(self, unpack(thumbArgs))}
                     end
                 end)
                 if ok2 and type(res) == "table" then return unpack(res) end
