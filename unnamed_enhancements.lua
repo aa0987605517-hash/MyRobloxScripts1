@@ -494297,11 +494297,65 @@ task.spawn(function()
         end)
         if not ok2 or not model then return end
 
-        -- Copy accessories using AddAccessory (safe, proper welding)
+        -- Copy accessories with manual weld fallback
         for _, child in model:GetChildren() do
             if child:IsA("Accessory") then
                 child.Parent = nil
-                pcall(function() humanoid:AddAccessory(child) end)
+
+                local addOk = pcall(function() humanoid:AddAccessory(child) end)
+
+                if not addOk or child.Parent ~= character then
+                    local handle = child:FindFirstChild("Handle")
+                    if handle and handle:IsA("BasePart") then
+                        for _, w in handle:GetChildren() do
+                            if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
+                                w:Destroy()
+                            end
+                        end
+
+                        local att = nil
+                        for _, a in handle:GetChildren() do
+                            if a:IsA("Attachment") then att = a; break end
+                        end
+
+                        if att then
+                            local target = nil
+                            for _, part in character:GetDescendants() do
+                                if part:IsA("Attachment") and part.Name == att.Name and part.Parent:IsA("BasePart") then
+                                    target = part; break
+                                end
+                            end
+
+                            if target then
+                                handle.Anchored = false
+                                handle.CanCollide = false
+                                local weld = Instance.new("Weld")
+                                weld.Name = "AccessoryWeld"
+                                weld.Part0 = target.Parent
+                                weld.Part1 = handle
+                                weld.C0 = target.CFrame
+                                weld.C1 = att.CFrame
+                                weld.Parent = handle
+                                child.Parent = character
+                            end
+                        end
+
+                        if child.Parent ~= character then
+                            local hrp = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+                            if hrp then
+                                handle.Anchored = false
+                                handle.CanCollide = false
+                                local weld = Instance.new("Weld")
+                                weld.Name = "AccessoryWeld"
+                                weld.Part0 = hrp
+                                weld.Part1 = handle
+                                weld.C0 = CFrame.new(0, hrp.Size.Y / 2 + 0.5, 0)
+                                weld.Parent = handle
+                                child.Parent = character
+                            end
+                        end
+                    end
+                end
             elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
                 child.Parent = character
             end
