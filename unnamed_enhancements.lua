@@ -493764,6 +493764,120 @@ task.spawn(function()
         Numeric = true,
     })
 
+    -- === SCRIPT LOADER ===
+    local loaderGroup = miscTab:AddLeftGroupbox('Script Loader')
+
+    loaderGroup:AddInput('IS_ScriptURL', {
+        Text = 'Script URL',
+        Default = '',
+        Placeholder = 'https://raw.githubusercontent.com/...',
+        Numeric = false,
+    })
+
+    loaderGroup:AddButton({
+        Text = 'Load Script',
+        Func = function()
+            local url = Options.IS_ScriptURL and Options.IS_ScriptURL.Value or ""
+            if url == "" then
+                lib:Notify("Please enter a script URL", 3)
+                return
+            end
+            local ok, err = pcall(function()
+                loadstring(game:HttpGet(url))()
+            end)
+            if ok then
+                lib:Notify("Script loaded!", 3)
+            else
+                lib:Notify("Failed: " .. tostring(err), 5)
+            end
+        end,
+        DoubleClick = false,
+    })
+
+    loaderGroup:AddToggle('IS_AutoLoad', {
+        Text = 'Auto Load on Execute',
+        Default = false,
+    })
+
+    -- Auto-load saved scripts list
+    local autoLoadScripts = {}
+    local autoLoadFolder = "unnamed_enhancements/autoload"
+
+    pcall(function()
+        if not isfolder(autoLoadFolder) then
+            makefolder("unnamed_enhancements")
+            makefolder(autoLoadFolder)
+        end
+    end)
+
+    loaderGroup:AddButton({
+        Text = 'Save to Auto Load',
+        Func = function()
+            local url = Options.IS_ScriptURL and Options.IS_ScriptURL.Value or ""
+            if url == "" then
+                lib:Notify("Enter a URL first", 3)
+                return
+            end
+            local ok, err = pcall(function()
+                local existing = {}
+                if isfile(autoLoadFolder .. "/list.txt") then
+                    for line in readfile(autoLoadFolder .. "/list.txt"):gmatch("[^\r\n]+") do
+                        table.insert(existing, line)
+                    end
+                end
+                for _, v in ipairs(existing) do
+                    if v == url then
+                        lib:Notify("Already in auto-load list", 3)
+                        return
+                    end
+                end
+                table.insert(existing, url)
+                writefile(autoLoadFolder .. "/list.txt", table.concat(existing, "\n"))
+                lib:Notify("Saved to auto-load!", 3)
+            end)
+            if not ok then
+                lib:Notify("Save failed: " .. tostring(err), 5)
+            end
+        end,
+        DoubleClick = false,
+    })
+
+    loaderGroup:AddButton({
+        Text = 'Clear Auto Load List',
+        Func = function()
+            pcall(function()
+                if isfile(autoLoadFolder .. "/list.txt") then
+                    delfile(autoLoadFolder .. "/list.txt")
+                end
+            end)
+            lib:Notify("Auto-load list cleared", 3)
+        end,
+        DoubleClick = true,
+    })
+
+    -- Run auto-load scripts on startup
+    if Toggles.IS_AutoLoad then
+        task.spawn(function()
+            task.wait(2)
+            pcall(function()
+                if not isfile(autoLoadFolder .. "/list.txt") then return end
+                local list = readfile(autoLoadFolder .. "/list.txt")
+                for line in list:gmatch("[^\r\n]+") do
+                    if line ~= "" then
+                        local ok2, err2 = pcall(function()
+                            loadstring(game:HttpGet(line))()
+                        end)
+                        if ok2 then
+                            print("[AutoLoad] Loaded: " .. line)
+                        else
+                            warn("[AutoLoad] Failed: " .. line .. " - " .. tostring(err2))
+                        end
+                    end
+                end
+            end)
+        end)
+    end
+
     -- === SPOOF ENGINE ===
     local rawget = rawget
     local rawset = rawset
