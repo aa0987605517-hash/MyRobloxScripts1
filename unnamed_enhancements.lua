@@ -493750,6 +493750,20 @@ task.spawn(function()
         Default = 1,
     })
 
+    -- === AVATAR SPOOF ===
+    local avatarGroup = miscTab:AddRightGroupbox('Avatar Spoof')
+
+    avatarGroup:AddToggle('IS_AvatarSpoof', {
+        Text = 'Spoof Avatar',
+        Default = false,
+    })
+    avatarGroup:AddInput('IS_AvatarUserId', {
+        Text = 'User ID',
+        Default = '',
+        Placeholder = 'Target UserId',
+        Numeric = true,
+    })
+
     -- === SPOOF ENGINE ===
     local rawget = rawget
     local rawset = rawset
@@ -493857,90 +493871,233 @@ task.spawn(function()
         end)
     end
 
-    -- Apply attribute spoofs to a player
-    local function applyAttributeSpoofs(player)
-        if Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
-            guardAttribute(player, "StatisticDuelsWinStreak"):Set(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50)
-        end
-        if Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
-            guardAttribute(player, "Level"):Set(Options.IS_LevelValue and Options.IS_LevelValue.Value or 100)
-        end
-        if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
-            guardAttribute(player, "DisplayELO"):Set(Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
-            applyLeaderstat(player, Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
-        end
-        if Toggles.IS_NametagStatus and Toggles.IS_NametagStatus.Value then
-            local val = Options.IS_NametagType and Options.IS_NametagType.Value or "Prime"
-            guardAttribute(player, "PlayerStatus"):Set(val)
-        end
-        if Toggles.IS_Influencer and Toggles.IS_Influencer.Value then
-            guardAttribute(player, "IsInfluencer"):Set(true)
-        end
-        if Toggles.IS_RobloxEmployee and Toggles.IS_RobloxEmployee.Value then
-            guardAttribute(player, "IsRobloxEmployee"):Set(true)
-        end
-        if Toggles.IS_NosniyTeam and Toggles.IS_NosniyTeam.Value then
-            guardAttribute(player, "GroupRank"):Set(255)
-        end
-    end
-
-    -- Toggle callbacks
-    local spoofConnection
-    local function startSpoofing()
-        for _, player in Players:GetPlayers() do
-            safeCall(applyAttributeSpoofs, player)
-        end
-        if not spoofConnection then
-            spoofConnection = Players.PlayerAdded:Connect(function(player)
-                task.wait(1)
-                safeCall(applyAttributeSpoofs, player)
-            end)
-        end
-    end
-
-    local function stopSpoofing()
-        if spoofConnection then
-            spoofConnection:Disconnect()
-            spoofConnection = nil
-        end
-        for _, guard in pairs(attrGuards) do
-            guard:Destroy()
-        end
-        attrGuards = {}
-        for _, entry in pairs(leaderstatEntries) do
-            entry.Connection:Disconnect()
-            pcall(function() entry.Stat.Value = entry.Original end)
-        end
-        leaderstatEntries = {}
-    end
-
-    -- Wire up toggle callbacks
-    local spoofToggles = {
-        'IS_WinstreakSpoof', 'IS_LevelSpoof', 'IS_EloSpoof',
-        'IS_NametagStatus', 'IS_Influencer', 'IS_RobloxEmployee', 'IS_NosniyTeam',
+    -- Attribute-to-toggle mapping
+    local ATTR_MAP = {
+        IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50 end },
+        IS_LevelSpoof     = { attr = "Level", getValue = function() return Options.IS_LevelValue and Options.IS_LevelValue.Value or 100 end },
+        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return Options.IS_EloValue and Options.IS_EloValue.Value or 2000 end },
+        IS_NametagStatus  = { attr = "PlayerStatus", getValue = function() return Options.IS_NametagType and Options.IS_NametagType.Value or "Prime" end },
+        IS_Influencer     = { attr = "IsInfluencer", getValue = function() return true end },
+        IS_RobloxEmployee = { attr = "IsRobloxEmployee", getValue = function() return true end },
+        IS_NosniyTeam     = { attr = "GroupRank", getValue = function() return 255 end },
     }
 
-    for _, toggleName in ipairs(spoofToggles) do
+    -- Apply one attribute spoof to a player
+    local function applySingleSpoof(player, toggleName)
+        local info = ATTR_MAP[toggleName]
+        if not info then return end
+        guardAttribute(player, info.attr):Set(info.getValue())
+    end
+
+    -- Restore one attribute spoof from a player
+    local function restoreSingleSpoof(player, toggleName)
+        local info = ATTR_MAP[toggleName]
+        if not info then return end
+        local key = tostring(player.UserId) .. ":" .. info.attr
+        local guard = attrGuards[key]
+        if guard then
+            guard:Destroy()
+        end
+    end
+
+    -- Apply all enabled attribute spoofs to a player
+    local function applyAllSpoofs(player)
+        for toggleName, _ in pairs(ATTR_MAP) do
+            if Toggles[toggleName] and Toggles[toggleName].Value then
+                applySingleSpoof(player, toggleName)
+            end
+        end
+        if Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+            applyLeaderstat(player, Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
+        end
+    end
+
+    -- PlayerAdded connection
+    local spoofConnection
+    spoofConnection = Players.PlayerAdded:Connect(function(player)
+        task.wait(1)
+        safeCall(applyAllSpoofs, player)
+    end)
+
+    -- Wire up each toggle: ON = apply, OFF = restore instantly
+    for toggleName, _ in pairs(ATTR_MAP) do
         if Toggles[toggleName] then
             Toggles[toggleName]:OnChanged(function(val)
-                if val then
-                    startSpoofing()
+                for _, player in Players:GetPlayers() do
+                    if val then
+                        safeCall(applySingleSpoof, player, toggleName)
+                    else
+                        safeCall(restoreSingleSpoof, player, toggleName)
+                    end
+                end
+                -- ELO leaderstat
+                if toggleName == 'IS_EloSpoof' then
+                    if val then
+                        for _, player in Players:GetPlayers() do
+                            applyLeaderstat(player, Options.IS_EloValue and Options.IS_EloValue.Value or 2000)
+                        end
+                    else
+                        for _, entry in pairs(leaderstatEntries) do
+                            entry.Connection:Disconnect()
+                            pcall(function() entry.Stat.Value = entry.Original end)
+                        end
+                        leaderstatEntries = {}
+                    end
                 end
             end)
         end
     end
 
-    -- Slider/dropdown change callbacks to re-apply
-    local function reapply()
-        for _, player in Players:GetPlayers() do
-            safeCall(applyAttributeSpoofs, player)
+    -- Slider/dropdown change callbacks to re-apply active spoofs
+    local function reapplyToggle(toggleName)
+        if Toggles[toggleName] and Toggles[toggleName].Value then
+            for _, player in Players:GetPlayers() do
+                safeCall(applySingleSpoof, player, toggleName)
+            end
         end
     end
 
-    if Options.IS_WinstreakValue then Options.IS_WinstreakValue:OnChanged(reapply) end
-    if Options.IS_LevelValue then Options.IS_LevelValue:OnChanged(reapply) end
-    if Options.IS_EloValue then Options.IS_EloValue:OnChanged(reapply) end
-    if Options.IS_NametagType then Options.IS_NametagType:OnChanged(reapply) end
+    if Options.IS_WinstreakValue then Options.IS_WinstreakValue:OnChanged(function() reapplyToggle('IS_WinstreakSpoof') end) end
+    if Options.IS_LevelValue then Options.IS_LevelValue:OnChanged(function() reapplyToggle('IS_LevelSpoof') end) end
+    if Options.IS_EloValue then Options.IS_EloValue:OnChanged(function() reapplyToggle('IS_EloSpoof') end) end
+    if Options.IS_NametagType then Options.IS_NametagType:OnChanged(function() reapplyToggle('IS_NametagStatus') end) end
+
+    -- === AVATAR SPOOF ENGINE ===
+    local avatarSpoofedInstances = {}
+    local avatarStashed = {}
+    local avatarConns = {}
+
+    local function applyAvatarToCharacter(character, userId)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            local start = os.clock()
+            repeat
+                humanoid = character:FindFirstChildOfClass("Humanoid")
+                task.wait(0.1)
+            until humanoid or (os.clock() - start > 10)
+        end
+        if not humanoid then return end
+
+        local ok, model = pcall(function()
+            return Players:CreateHumanoidModelFromDescriptionAsync(
+                Players:GetHumanoidDescriptionFromUserId(userId),
+                humanoid.RigType
+            )
+        end)
+        if not ok or not model then
+            warn("[AvatarSpoof]", model)
+            return
+        end
+
+        local spoofed = {}
+        local stashed = {}
+
+        for _, child in character:GetChildren() do
+            if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                child.Parent = nil
+                table.insert(stashed, child)
+            end
+        end
+
+        for _, child in model:GetChildren() do
+            if child:IsA("Accessory") then
+                child.Parent = nil
+                spoofed[child] = true
+
+                local handle = child:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    for _, w in handle:GetChildren() do
+                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
+                            w:Destroy()
+                        end
+                    end
+
+                    local att = nil
+                    for _, a in handle:GetChildren() do
+                        if a:IsA("Attachment") then att = a; break end
+                    end
+
+                    if att then
+                        local target = nil
+                        for _, part in character:GetChildren() do
+                            if part:IsA("BasePart") then
+                                local found = part:FindFirstChild(att.Name)
+                                if found and found:IsA("Attachment") then
+                                    target = found; break
+                                end
+                            end
+                        end
+
+                        if target then
+                            handle.Anchored = false
+                            local weld = Instance.new("Weld")
+                            weld.Name = "AccessoryWeld"
+                            weld.Part0 = handle
+                            weld.Part1 = target.Parent
+                            weld.C0 = att.CFrame
+                            weld.C1 = target.CFrame
+                            weld.Parent = handle
+                        end
+                    end
+                end
+
+                child.Parent = character
+            elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                spoofed[child] = true
+                child.Parent = character
+            elseif child:IsA("BasePart") then
+                local match = character:FindFirstChild(child.Name)
+                if match and match:IsA("BasePart") then
+                    match.Color = child.Color
+                end
+            end
+        end
+
+        local srcHead = model:FindFirstChild("Head")
+        local dstHead = character:FindFirstChild("Head")
+        if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
+            dstHead.Transparency = srcHead.Transparency
+            if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
+                dstHead.MeshId = srcHead.MeshId
+                dstHead.TextureID = srcHead.TextureID
+            end
+        end
+
+        model:Destroy()
+
+        local key = character:GetFullName()
+        avatarSpoofedInstances[key] = spoofed
+        avatarStashed[key] = stashed
+    end
+
+    if Toggles.IS_AvatarSpoof then
+        Toggles.IS_AvatarSpoof:OnChanged(function(val)
+            if val then
+                local userId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+                if not userId then return end
+
+                local char = LocalPlayer.Character
+                if char then
+                    task.spawn(function()
+                        safeCall(applyAvatarToCharacter, char, userId)
+                    end)
+                end
+
+                avatarConns[1] = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                    task.wait(1)
+                    local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+                    if uid then
+                        safeCall(applyAvatarToCharacter, newChar, uid)
+                    end
+                end)
+            else
+                for _, conn in pairs(avatarConns) do
+                    if conn then conn:Disconnect() end
+                end
+                avatarConns = {}
+            end
+        end)
+    end
 
     -- Ping spoof
     local PING_RANGES = {
