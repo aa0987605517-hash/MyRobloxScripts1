@@ -494339,14 +494339,31 @@ task.spawn(function()
     local function doApplySpoof(character)
         if not avatarSpoofUserId then return end
         if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
+        if not character or not character.Parent then return end
+        print("[AvatarSpoof] Applying to", character:GetFullName(), "userId:", avatarSpoofUserId)
         safeCall(applyAvatarSpoof, character, avatarSpoofUserId)
+    end
+
+    local function scheduleApply(character)
+        task.spawn(function()
+            for _, delay in ipairs({1, 3, 6}) do
+                task.wait(delay == 1 and 1 or (delay - (delay == 3 and 1 or 3)))
+                if not avatarSpoofUserId then return end
+                if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
+                if not character or not character.Parent then return end
+                doApplySpoof(character)
+            end
+        end)
     end
 
     if Toggles.IS_AvatarSpoof then
         Toggles.IS_AvatarSpoof:OnChanged(function(val)
             if val then
                 avatarSpoofUserId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
-                if not avatarSpoofUserId then return end
+                if not avatarSpoofUserId then
+                    warn("[AvatarSpoof] No User ID set")
+                    return
+                end
 
                 local char = LocalPlayer.Character
                 if char then
@@ -494354,17 +494371,13 @@ task.spawn(function()
                 end
 
                 avatarConns[1] = LocalPlayer.CharacterAppearanceLoaded:Connect(function(char)
-                    task.spawn(function()
-                        task.wait(0.5)
-                        doApplySpoof(char)
-                    end)
+                    print("[AvatarSpoof] CharacterAppearanceLoaded fired")
+                    scheduleApply(char)
                 end)
 
                 avatarConns[2] = LocalPlayer.CharacterAdded:Connect(function(newChar)
-                    task.spawn(function()
-                        task.wait(3)
-                        doApplySpoof(newChar)
-                    end)
+                    print("[AvatarSpoof] CharacterAdded fired")
+                    scheduleApply(newChar)
                 end)
             else
                 avatarSpoofUserId = nil
