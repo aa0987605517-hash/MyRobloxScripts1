@@ -256,7 +256,7 @@ if game.GameId ~= 6035872082 then return end
 local ok, err = pcall(function()
     local env = getgenv()
     env.SILENT = flag('LOAD_SILENTLY')
-    local source = game:HttpGet('https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/claude/game-scripts-modifications-3si52n/unnamed_enhancements.lua')
+    local source = game:HttpGet('https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/claude/game-scripts-modifications-3si52n/67')
     local chunk, compileError = loadstring(source, '=UE Auto Load')
     assert(type(chunk) == 'function', compileError or 'UE compilation failed')
     local result = chunk(env)
@@ -493681,36 +493681,33 @@ task.spawn(function()
         Text = 'Spoof Level',
         Default = false,
     })
-    infoGroup:AddSlider('IS_LevelValue', {
+    infoGroup:AddInput('IS_LevelValue', {
         Text = 'Level',
-        Default = 100,
-        Min = 0,
-        Max = 1000,
-        Rounding = 0,
+        Default = '100',
+        Placeholder = '0-1000',
+        Numeric = true,
     })
 
     infoGroup:AddToggle('IS_EloSpoof', {
         Text = 'Spoof Ranked ELO',
         Default = false,
     })
-    infoGroup:AddSlider('IS_EloValue', {
+    infoGroup:AddInput('IS_EloValue', {
         Text = 'ELO',
-        Default = 2000,
-        Min = 0,
-        Max = 10000,
-        Rounding = 0,
+        Default = '2000',
+        Placeholder = '0-10000',
+        Numeric = true,
     })
 
     infoGroup:AddToggle('IS_WinstreakSpoof', {
         Text = 'Spoof Winstreak',
         Default = false,
     })
-    infoGroup:AddSlider('IS_WinstreakValue', {
+    infoGroup:AddInput('IS_WinstreakValue', {
         Text = 'Winstreak',
-        Default = 50,
-        Min = 0,
-        Max = 9999,
-        Rounding = 0,
+        Default = '50',
+        Placeholder = '0-9999',
+        Numeric = true,
     })
 
     -- === BADGE SPOOF ===
@@ -493997,9 +493994,9 @@ task.spawn(function()
 
     -- Attribute-to-toggle mapping
     local ATTR_MAP = {
-        IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50 end },
-        IS_LevelSpoof     = { attr = "Level", getValue = function() return Options.IS_LevelValue and Options.IS_LevelValue.Value or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
-        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return Options.IS_EloValue and Options.IS_EloValue.Value or 2000 end, leaderstat = {"CustomLeaderstats", "Current ELO"} },
+        IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50 end },
+        IS_LevelSpoof     = { attr = "Level", getValue = function() return tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
+        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000 end, leaderstat = {"CustomLeaderstats", "Current ELO"} },
         IS_NametagStatus  = { attr = "PlayerStatus", getValue = function() return Options.IS_NametagType and Options.IS_NametagType.Value or "Prime" end },
         IS_Influencer     = { attr = "IsInfluencer", getValue = function() return true end },
         IS_RobloxEmployee = { attr = "IsRobloxEmployee", getValue = function() return true end },
@@ -494203,6 +494200,46 @@ task.spawn(function()
             end
         end)
     end
+
+    -- === DATA HOOK (Level/ELO/Winstreak on profile card) ===
+    pcall(function()
+        local mt = getrawmetatable(game)
+        if not mt then return end
+        local oldNc = mt.__namecall
+        if not oldNc then return end
+        setreadonly(mt, false)
+
+        local function patchTable(t)
+            if t.Level ~= nil and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
+                t.Level = Options.IS_LevelValue and Options.IS_LevelValue.Value or 100
+            end
+            if t.DisplayELO ~= nil and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                t.DisplayELO = Options.IS_EloValue and Options.IS_EloValue.Value or 2000
+            end
+            if t.StatisticDuelsWinStreak ~= nil and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
+                t.StatisticDuelsWinStreak = Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50
+            end
+        end
+
+        mt.__namecall = newcclosure(function(self, ...)
+            local result = oldNc(self, ...)
+            local ok2 = pcall(function()
+                local method = getnamecallmethod()
+                if method ~= "InvokeServer" then return end
+                if not self:IsA("RemoteFunction") then return end
+                if type(result) ~= "table" then return end
+                pcall(patchTable, result)
+                for k, v in pairs(result) do
+                    if type(v) == "table" then
+                        pcall(patchTable, v)
+                    end
+                end
+            end)
+            return result
+        end)
+
+        setreadonly(mt, true)
+    end)
 
     -- Ping spoof
     local PING_RANGES = {
