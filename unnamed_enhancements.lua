@@ -494204,6 +494204,46 @@ task.spawn(function()
         end)
     end
 
+    -- === DATA HOOK (Level/ELO/Winstreak on profile card) ===
+    pcall(function()
+        local mt = getrawmetatable(game)
+        if not mt then return end
+        local oldNc = mt.__namecall
+        if not oldNc then return end
+        setreadonly(mt, false)
+
+        local function patchTable(t)
+            if t.Level ~= nil and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
+                t.Level = Options.IS_LevelValue and Options.IS_LevelValue.Value or 100
+            end
+            if t.DisplayELO ~= nil and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                t.DisplayELO = Options.IS_EloValue and Options.IS_EloValue.Value or 2000
+            end
+            if t.StatisticDuelsWinStreak ~= nil and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
+                t.StatisticDuelsWinStreak = Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value or 50
+            end
+        end
+
+        mt.__namecall = newcclosure(function(self, ...)
+            local result = oldNc(self, ...)
+            local ok2 = pcall(function()
+                local method = getnamecallmethod()
+                if method ~= "InvokeServer" then return end
+                if not self:IsA("RemoteFunction") then return end
+                if type(result) ~= "table" then return end
+                pcall(patchTable, result)
+                for k, v in pairs(result) do
+                    if type(v) == "table" then
+                        pcall(patchTable, v)
+                    end
+                end
+            end)
+            return result
+        end)
+
+        setreadonly(mt, true)
+    end)
+
     -- Ping spoof
     local PING_RANGES = {
         Low    = {150, 160},
