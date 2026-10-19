@@ -494297,69 +494297,77 @@ task.spawn(function()
         end)
         if not ok2 or not model then return end
 
-        -- Copy accessories with manual weld fallback
+        -- Copy accessories
+        local accCount = 0
+        local accOk = 0
         for _, child in model:GetChildren() do
             if child:IsA("Accessory") then
-                child.Parent = nil
-
-                local addOk = pcall(function() humanoid:AddAccessory(child) end)
-
-                if not addOk or child.Parent ~= character then
-                    local handle = child:FindFirstChild("Handle")
-                    if handle and handle:IsA("BasePart") then
-                        for _, w in handle:GetChildren() do
-                            if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
-                                w:Destroy()
-                            end
+                accCount = accCount + 1
+                local cloned = child:Clone()
+                local handle = cloned:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    for _, w in handle:GetChildren() do
+                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
+                            w:Destroy()
                         end
+                    end
+                    handle.Anchored = false
+                    handle.CanCollide = false
+                end
 
+                local added = pcall(function() humanoid:AddAccessory(cloned) end)
+                if added and cloned.Parent == character then
+                    accOk = accOk + 1
+                    print("[AvatarSpoof] AddAccessory OK:", cloned.Name)
+                else
+                    -- Manual weld fallback
+                    if handle then
                         local att = nil
                         for _, a in handle:GetChildren() do
                             if a:IsA("Attachment") then att = a; break end
                         end
 
+                        local welded = false
                         if att then
-                            local target = nil
                             for _, part in character:GetDescendants() do
                                 if part:IsA("Attachment") and part.Name == att.Name and part.Parent:IsA("BasePart") then
-                                    target = part; break
+                                    local weld = Instance.new("Weld")
+                                    weld.Part0 = part.Parent
+                                    weld.Part1 = handle
+                                    weld.C0 = part.CFrame
+                                    weld.C1 = att.CFrame
+                                    weld.Parent = handle
+                                    cloned.Parent = character
+                                    welded = true
+                                    accOk = accOk + 1
+                                    print("[AvatarSpoof] Manual weld OK:", cloned.Name, "->", part.Name)
+                                    break
                                 end
-                            end
-
-                            if target then
-                                handle.Anchored = false
-                                handle.CanCollide = false
-                                local weld = Instance.new("Weld")
-                                weld.Name = "AccessoryWeld"
-                                weld.Part0 = target.Parent
-                                weld.Part1 = handle
-                                weld.C0 = target.CFrame
-                                weld.C1 = att.CFrame
-                                weld.Parent = handle
-                                child.Parent = character
                             end
                         end
 
-                        if child.Parent ~= character then
-                            local hrp = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-                            if hrp then
-                                handle.Anchored = false
-                                handle.CanCollide = false
+                        if not welded then
+                            local head = character:FindFirstChild("Head")
+                            if head then
                                 local weld = Instance.new("Weld")
-                                weld.Name = "AccessoryWeld"
-                                weld.Part0 = hrp
+                                weld.Part0 = head
                                 weld.Part1 = handle
-                                weld.C0 = CFrame.new(0, hrp.Size.Y / 2 + 0.5, 0)
+                                weld.C0 = CFrame.new(0, 0.5, 0)
                                 weld.Parent = handle
-                                child.Parent = character
+                                cloned.Parent = character
+                                accOk = accOk + 1
+                                print("[AvatarSpoof] Head fallback weld:", cloned.Name)
+                            else
+                                warn("[AvatarSpoof] Failed to attach:", cloned.Name)
                             end
                         end
                     end
                 end
             elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                child.Parent = character
+                child:Clone().Parent = character
             end
         end
+        print("[AvatarSpoof] Accessories: " .. accOk .. "/" .. accCount .. " applied")
 
         -- Copy face
         local srcHead = model:FindFirstChild("Head")
