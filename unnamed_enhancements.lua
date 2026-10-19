@@ -256,9 +256,10 @@ if game.GameId ~= 6035872082 then return end
 local ok, err = pcall(function()
     local env = getgenv()
     env.SILENT = flag('LOAD_SILENTLY')
-    local source = game:HttpGet('https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/claude/game-scripts-modifications-3si52n/67')
+    local source = game:HttpGet('https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/claude/game-scripts-modifications-3si52n/unnamed_main.lua')
+    if not source or #source < 1000 then return end
     local chunk, compileError = loadstring(source, '=UE Auto Load')
-    assert(type(chunk) == 'function', compileError or 'UE compilation failed')
+    if not chunk then warn('[UE Auto Load] ' .. tostring(compileError)) return end
     local result = chunk()
     if type(result) == 'table' and result.status == 'error' then
         error(result.error or 'UE initialization failed', 0)
