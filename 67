@@ -494030,43 +494030,35 @@ task.spawn(function()
         end
     end
 
-    -- Apply all enabled attribute spoofs to a player
-    local function applyAllSpoofs(player)
+    -- Apply all enabled attribute spoofs to LocalPlayer only
+    local function applyAllSpoofs()
         for toggleName, _ in pairs(ATTR_MAP) do
             if Toggles[toggleName] and Toggles[toggleName].Value then
-                applySingleSpoof(player, toggleName)
+                applySingleSpoof(LocalPlayer, toggleName)
             end
         end
     end
 
-    -- PlayerAdded connection
-    local spoofConnection
-    spoofConnection = Players.PlayerAdded:Connect(function(player)
-        task.wait(1)
-        safeCall(applyAllSpoofs, player)
-    end)
+    -- Apply on start
+    applyAllSpoofs()
 
-    -- Wire up each toggle: ON = apply, OFF = restore instantly
+    -- Wire up each toggle: ON = apply to self, OFF = restore instantly
     for toggleName, _ in pairs(ATTR_MAP) do
         if Toggles[toggleName] then
             Toggles[toggleName]:OnChanged(function(val)
-                for _, player in Players:GetPlayers() do
-                    if val then
-                        safeCall(applySingleSpoof, player, toggleName)
-                    else
-                        safeCall(restoreSingleSpoof, player, toggleName)
-                    end
+                if val then
+                    safeCall(applySingleSpoof, LocalPlayer, toggleName)
+                else
+                    safeCall(restoreSingleSpoof, LocalPlayer, toggleName)
                 end
             end)
         end
     end
 
-    -- Slider/dropdown change callbacks to re-apply active spoofs
+    -- Slider/dropdown change callbacks to re-apply active spoofs (self only)
     local function reapplyToggle(toggleName)
         if Toggles[toggleName] and Toggles[toggleName].Value then
-            for _, player in Players:GetPlayers() do
-                safeCall(applySingleSpoof, player, toggleName)
-            end
+            safeCall(applySingleSpoof, LocalPlayer, toggleName)
         end
     end
 
