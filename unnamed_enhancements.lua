@@ -494262,6 +494262,137 @@ task.spawn(function()
     if Options.IS_EloValue then Options.IS_EloValue:OnChanged(function() reapplyToggle('IS_EloSpoof') end) end
     if Options.IS_NametagType then Options.IS_NametagType:OnChanged(function() reapplyToggle('IS_NametagStatus') end) end
 
+    -- === AVATAR MODEL SPOOF (accessories only, safe for Rivals) ===
+    local avatarConns = {}
+    local avatarHiddenParts = {}
+    local avatarAddedParts = {}
+
+    local function applyAvatarAccessories(character, userId)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+
+        local ok, model = pcall(function()
+            return Players:CreateHumanoidModelFromDescriptionAsync(
+                Players:GetHumanoidDescriptionFromUserId(userId),
+                humanoid.RigType
+            )
+        end)
+        if not ok or not model then return end
+
+        local key = character:GetFullName()
+        avatarHiddenParts[key] = avatarHiddenParts[key] or {}
+        avatarAddedParts[key] = avatarAddedParts[key] or {}
+
+        for _, child in character:GetChildren() do
+            if child:IsA("Accessory") then
+                child.Parent = nil
+                table.insert(avatarHiddenParts[key], child)
+            end
+        end
+
+        for _, child in model:GetChildren() do
+            if child:IsA("Accessory") then
+                child.Parent = nil
+                local handle = child:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    for _, w in handle:GetChildren() do
+                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
+                            w:Destroy()
+                        end
+                    end
+                end
+                pcall(function()
+                    humanoid:AddAccessory(child)
+                end)
+                table.insert(avatarAddedParts[key], child)
+            end
+        end
+
+        model:Destroy()
+    end
+
+    local function restoreAvatarAccessories(character)
+        if not character then return end
+        local key = character:GetFullName()
+
+        local added = avatarAddedParts[key]
+        if added then
+            for _, inst in ipairs(added) do
+                pcall(function() if inst and inst.Parent then inst:Destroy() end end)
+            end
+        end
+        avatarAddedParts[key] = nil
+
+        local hidden = avatarHiddenParts[key]
+        if hidden then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            for _, inst in ipairs(hidden) do
+                pcall(function()
+                    if inst then
+                        if humanoid then
+                            humanoid:AddAccessory(inst)
+                        else
+                            inst.Parent = character
+                        end
+                    end
+                end)
+            end
+        end
+        avatarHiddenParts[key] = nil
+    end
+
+    if Toggles.IS_AvatarSpoof then
+        Toggles.IS_AvatarSpoof:OnChanged(function(val)
+            if val then
+                local userId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+                if not userId then return end
+
+                local char = LocalPlayer.Character
+                if char then
+                    task.spawn(function()
+                        safeCall(applyAvatarAccessories, char, userId)
+                    end)
+                end
+
+                avatarConns[1] = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                    task.spawn(function()
+                        task.wait(2)
+                        local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+                        if uid and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                            safeCall(applyAvatarAccessories, newChar, uid)
+                        end
+                    end)
+                end)
+            else
+                for _, conn in pairs(avatarConns) do
+                    if conn then pcall(function() conn:Disconnect() end) end
+                end
+                avatarConns = {}
+                local char = LocalPlayer.Character
+                if char then
+                    safeCall(restoreAvatarAccessories, char)
+                end
+            end
+        end)
+    end
+
+    if Options.IS_AvatarUserId then
+        Options.IS_AvatarUserId:OnChanged(function()
+            if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                local char = LocalPlayer.Character
+                if char then
+                    task.spawn(function()
+                        safeCall(restoreAvatarAccessories, char)
+                        local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value or "")
+                        if uid then
+                            safeCall(applyAvatarAccessories, char, uid)
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+
     -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
     local RunService = game:GetService("RunService")
     local thumbConns = {}
