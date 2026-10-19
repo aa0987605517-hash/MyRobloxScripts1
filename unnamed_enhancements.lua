@@ -494201,6 +494201,82 @@ task.spawn(function()
         end)
     end
 
+    -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
+    local thumbConns = {}
+    local localThumbPatterns = {}
+
+    local function buildThumbPatterns()
+        local uid = tostring(LocalPlayer.UserId)
+        localThumbPatterns = {
+            "rbxthumb://type=AvatarHeadShot&id=" .. uid,
+            "rbxthumb://type=AvatarThumbnail&id=" .. uid,
+            "rbxthumb://type=Avatar&id=" .. uid,
+        }
+    end
+
+    local function getSpoofThumbUrl(originalUrl, spoofId)
+        for _, pat in ipairs(localThumbPatterns) do
+            if string.find(originalUrl, pat, 1, true) then
+                return string.gsub(originalUrl, "id=" .. tostring(LocalPlayer.UserId), "id=" .. tostring(spoofId))
+            end
+        end
+        return nil
+    end
+
+    local function spoofDescendantThumbs(root, spoofId)
+        pcall(function()
+            for _, obj in ipairs(root:GetDescendants()) do
+                pcall(function()
+                    if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
+                        local newUrl = getSpoofThumbUrl(obj.Image, spoofId)
+                        if newUrl then
+                            obj.Image = newUrl
+                        end
+                    end
+                end)
+            end
+        end)
+    end
+
+    local function startThumbSpoof()
+        buildThumbPatterns()
+        local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+        if not spoofId then return end
+
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            spoofDescendantThumbs(playerGui, spoofId)
+            thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
+                task.defer(function()
+                    pcall(function()
+                        if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
+                            local newUrl = getSpoofThumbUrl(obj.Image, spoofId)
+                            if newUrl then obj.Image = newUrl end
+                        end
+                    end)
+                end)
+            end)
+        end
+    end
+
+    local function stopThumbSpoof()
+        for _, conn in pairs(thumbConns) do
+            if conn then pcall(function() conn:Disconnect() end) end
+        end
+        thumbConns = {}
+    end
+
+    if Toggles.IS_AvatarSpoof then
+        local origOnChanged = nil
+        Toggles.IS_AvatarSpoof:OnChanged(function(val)
+            if val then
+                task.spawn(startThumbSpoof)
+            else
+                stopThumbSpoof()
+            end
+        end)
+    end
+
     -- === DATA HOOK (Level/ELO/Winstreak on profile card) ===
     pcall(function()
         local mt = getrawmetatable(game)
