@@ -493650,6 +493650,76 @@ task.spawn(function()
     local Options = rawget(sharedEnv, 'Options') or {}
     local Toggles = rawget(sharedEnv, 'Toggles') or {}
 
+    -- === ACCENT GLOW EFFECT ===
+    task.spawn(function()
+        task.wait(0.5)
+        pcall(function()
+            if not lib.ScreenGui then return end
+            local accentColor = lib.AccentColor or Color3.fromHex("7ec8e3")
+
+            -- Add glow to all existing accent-colored UIStrokes
+            for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
+                pcall(function()
+                    if obj:IsA("UIStroke") and obj.Thickness <= 1 then
+                        local parent = obj.Parent
+                        if parent and (parent:IsA("Frame") or parent:IsA("ImageButton") or parent:IsA("TextButton")) then
+                            -- Create glow layer behind
+                            local glowStroke = Instance.new("UIStroke")
+                            glowStroke.Name = "AccentGlow"
+                            glowStroke.Color = accentColor
+                            glowStroke.Thickness = 3
+                            glowStroke.Transparency = 0.7
+                            glowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                            glowStroke.Parent = parent
+                        end
+                    end
+                end)
+            end
+
+            -- Watch for theme changes to update glow color
+            local function updateGlow()
+                local newColor = lib.AccentColor or accentColor
+                pcall(function()
+                    for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
+                        if obj:IsA("UIStroke") and obj.Name == "AccentGlow" then
+                            obj.Color = newColor
+                        end
+                    end
+                end)
+            end
+
+            -- Also add glow to new elements
+            lib.ScreenGui.DescendantAdded:Connect(function(obj)
+                task.defer(function()
+                    pcall(function()
+                        if obj:IsA("UIStroke") and obj.Name ~= "AccentGlow" and obj.Thickness <= 1 then
+                            local parent = obj.Parent
+                            if parent and not parent:FindFirstChild("AccentGlow") then
+                                if parent:IsA("Frame") or parent:IsA("ImageButton") or parent:IsA("TextButton") then
+                                    local glowStroke = Instance.new("UIStroke")
+                                    glowStroke.Name = "AccentGlow"
+                                    glowStroke.Color = lib.AccentColor or accentColor
+                                    glowStroke.Thickness = 3
+                                    glowStroke.Transparency = 0.7
+                                    glowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                                    glowStroke.Parent = parent
+                                end
+                            end
+                        end
+                    end)
+                end)
+            end)
+
+            -- Periodically sync glow color with accent
+            task.spawn(function()
+                while lib and lib.ScreenGui and lib.ScreenGui.Parent do
+                    task.wait(2)
+                    updateGlow()
+                end
+            end)
+        end)
+    end)
+
     -- Create Identity Spoof groupbox
     local spoofGroup = miscTab:AddLeftGroupbox('Identity Spoof')
 
