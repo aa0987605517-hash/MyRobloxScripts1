@@ -493650,7 +493650,16 @@ task.spawn(function()
     local Options = rawget(sharedEnv, 'Options') or {}
     local Toggles = rawget(sharedEnv, 'Toggles') or {}
 
-    -- === ACCENT GLOW EFFECT (Neon border on blue/accent-colored elements) ===
+    -- === ACCENT GLOW EFFECT (adjustable neon glow on accent-colored UI) ===
+    local glowGroup = miscTab:AddRightGroupbox('Accent Glow')
+    glowGroup:AddToggle('AG_Enabled', { Text = 'Enable Glow', Default = true })
+    glowGroup:AddSlider('AG_Thickness', {
+        Text = 'Glow Thickness', Default = 2, Min = 0, Max = 8, Rounding = 1, Suffix = 'px',
+    })
+    glowGroup:AddSlider('AG_Transparency', {
+        Text = 'Glow Transparency', Default = 0.5, Min = 0, Max = 1, Rounding = 2,
+    })
+
     task.spawn(function()
         task.wait(1)
         pcall(function()
@@ -493659,46 +493668,50 @@ task.spawn(function()
 
             local function colorsMatch(c1, c2)
                 if not c1 or not c2 then return false end
-                return math.abs(c1.R - c2.R) < 0.08 and math.abs(c1.G - c2.G) < 0.08 and math.abs(c1.B - c2.B) < 0.08
+                return math.abs(c1.R - c2.R) < 0.12 and math.abs(c1.G - c2.G) < 0.12 and math.abs(c1.B - c2.B) < 0.12
             end
 
-            local function applyNeonStroke(obj, accent)
+            local function getSettings()
+                local Tog = rawget(sharedEnv, 'Toggles') or {}
+                local Opt = rawget(sharedEnv, 'Options') or {}
+                local enabled = true
+                local thickness = 2
+                local transparency = 0.5
+                if Tog.AG_Enabled and Tog.AG_Enabled.Value ~= nil then enabled = Tog.AG_Enabled.Value end
+                if Opt.AG_Thickness and Opt.AG_Thickness.Value ~= nil then thickness = Opt.AG_Thickness.Value end
+                if Opt.AG_Transparency and Opt.AG_Transparency.Value ~= nil then transparency = Opt.AG_Transparency.Value end
+                return enabled, thickness, transparency
+            end
+
+            local function applyGlow(obj, accent, enabled, thickness, transparency)
                 pcall(function()
-                    if not (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("TextLabel") or obj:IsA("ImageLabel")) then return end
+                    if not (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("ImageLabel")) then return end
                     if obj.BackgroundTransparency >= 0.9 then return end
                     if not colorsMatch(obj.BackgroundColor3, accent) then return end
 
-                    -- Mark it so we don't repeat
-                    if obj:GetAttribute("NeonGlowApplied") then
-                        -- Still update color
-                        local existing = obj:FindFirstChild("NeonGlowStroke")
-                        if existing then existing.Color = accent end
+                    local stroke = obj:FindFirstChild("NeonGlowStroke")
+                    if not enabled then
+                        if stroke then stroke:Destroy() end
                         return
                     end
-                    obj:SetAttribute("NeonGlowApplied", true)
-
-                    -- Remove any existing thin stroke
-                    for _, c in ipairs(obj:GetChildren()) do
-                        if c:IsA("UIStroke") and c.Name ~= "NeonGlowStroke" then
-                            c:Destroy()
-                        end
+                    if not stroke then
+                        stroke = Instance.new("UIStroke")
+                        stroke.Name = "NeonGlowStroke"
+                        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                        stroke.LineJoinMode = Enum.LineJoinMode.Round
+                        stroke.Parent = obj
                     end
-
-                    local stroke = Instance.new("UIStroke")
-                    stroke.Name = "NeonGlowStroke"
                     stroke.Color = accent
-                    stroke.Thickness = 1.5
-                    stroke.Transparency = 0.75
-                    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                    stroke.LineJoinMode = Enum.LineJoinMode.Round
-                    stroke.Parent = obj
+                    stroke.Thickness = thickness
+                    stroke.Transparency = transparency
                 end)
             end
 
             local function scanAll()
                 local accent = lib.AccentColor or defaultAccent
+                local enabled, thickness, transparency = getSettings()
                 for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
-                    applyNeonStroke(obj, accent)
+                    applyGlow(obj, accent, enabled, thickness, transparency)
                 end
             end
 
@@ -493707,14 +493720,14 @@ task.spawn(function()
             lib.ScreenGui.DescendantAdded:Connect(function(obj)
                 task.defer(function()
                     local accent = lib.AccentColor or defaultAccent
-                    applyNeonStroke(obj, accent)
+                    local enabled, thickness, transparency = getSettings()
+                    applyGlow(obj, accent, enabled, thickness, transparency)
                 end)
             end)
 
-            -- Periodically re-scan for theme changes
             task.spawn(function()
                 while lib and lib.ScreenGui and lib.ScreenGui.Parent do
-                    task.wait(2)
+                    task.wait(0.5)
                     pcall(scanAll)
                 end
             end)
