@@ -493687,8 +493687,8 @@ task.spawn(function()
                     local stroke = Instance.new("UIStroke")
                     stroke.Name = "NeonGlowStroke"
                     stroke.Color = accent
-                    stroke.Thickness = 3
-                    stroke.Transparency = 0.3
+                    stroke.Thickness = 1.5
+                    stroke.Transparency = 0.75
                     stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                     stroke.LineJoinMode = Enum.LineJoinMode.Round
                     stroke.Parent = obj
