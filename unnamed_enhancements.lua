@@ -494155,12 +494155,18 @@ task.spawn(function()
             end
         end
 
-        local srcFace = model:FindFirstChild("Head") and model.Head:FindFirstChildOfClass("Decal")
+        local srcHead = model:FindFirstChild("Head")
         local dstHead = character:FindFirstChild("Head")
-        if srcFace and dstHead then
+        if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
+            dstHead.Transparency = srcHead.Transparency
+            local srcFace = srcHead:FindFirstChildOfClass("Decal")
             local dstFace = dstHead:FindFirstChildOfClass("Decal")
-            if dstFace then
+            if srcFace and dstFace then
                 dstFace.Texture = srcFace.Texture
+            end
+            if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
+                dstHead.MeshId = srcHead.MeshId
+                dstHead.TextureID = srcHead.TextureID
             end
         end
 
@@ -494249,6 +494255,77 @@ task.spawn(function()
             end
         end)
     end
+
+    -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
+    pcall(function()
+        local mt = getrawmetatable(game)
+        if not mt then return end
+        local oldNc = mt.__namecall
+        if not oldNc then return end
+        setreadonly(mt, false)
+
+        mt.__namecall = newcclosure(function(self, ...)
+            local ok, method = pcall(getnamecallmethod)
+            if not ok then return oldNc(self, ...) end
+
+            if method == "GetUserThumbnailAsync" then
+                local ok2, res = pcall(function()
+                    if self ~= Players then return end
+                    if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+                    local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if not spoofId then return end
+                    local args = {...}
+                    if args[1] == LocalPlayer.UserId then
+                        args[1] = spoofId
+                        return {oldNc(self, unpack(args))}
+                    end
+                end)
+                if ok2 and type(res) == "table" then return unpack(res) end
+                return oldNc(self, ...)
+            end
+
+            local result = oldNc(self, ...)
+
+            if method == "InvokeServer" then
+                pcall(function()
+                    if not self:IsA("RemoteFunction") then return end
+                    if type(result) ~= "table" then return end
+                    local function tryPatch(t)
+                        if type(t) ~= "table" then return end
+                        local hasLevel = t.Level ~= nil
+                        local hasELO = t.DisplayELO ~= nil
+                        local hasStreak = t.StatisticDuelsWinStreak ~= nil
+                        if not (hasLevel or hasELO or hasStreak) then return end
+                        local score = 0
+                        if hasLevel then score = score + 1 end
+                        if hasELO then score = score + 1 end
+                        if hasStreak then score = score + 1 end
+                        if t.IsInfluencer ~= nil then score = score + 1 end
+                        if t.GroupRank ~= nil then score = score + 1 end
+                        if t.PlayerStatus ~= nil then score = score + 1 end
+                        if score < 2 then return end
+                        if hasLevel and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
+                            t.Level = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
+                        end
+                        if hasELO and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                            t.DisplayELO = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
+                        end
+                        if hasStreak and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
+                            t.StatisticDuelsWinStreak = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
+                        end
+                    end
+                    pcall(tryPatch, result)
+                    for _, v in pairs(result) do
+                        if type(v) == "table" then pcall(tryPatch, v) end
+                    end
+                end)
+            end
+
+            return result
+        end)
+
+        setreadonly(mt, true)
+    end)
 
     -- Ping spoof
     local PING_RANGES = {
