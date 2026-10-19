@@ -494218,39 +494218,65 @@ task.spawn(function()
     end
 
     -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
+    local RunService = game:GetService("RunService")
     local thumbConns = {}
+    local thumbSpoofActive = false
     local myIdStr = tostring(LocalPlayer.UserId)
 
+    local function replaceThumbIn(obj)
+        pcall(function()
+            if not (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) then return end
+            local img = obj.Image
+            if type(img) ~= "string" or img == "" then return end
+            if string.find(img, myIdStr, 1, true) then
+                local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                if sid then
+                    obj.Image = string.gsub(img, myIdStr, tostring(sid))
+                end
+            end
+        end)
+    end
+
     local function startThumbSpoof()
-        local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-        if not spoofId then return end
+        if thumbSpoofActive then return end
+        thumbSpoofActive = true
 
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
 
-        local function replaceInObj(obj)
-            pcall(function()
-                if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" and obj.Image ~= "" then
-                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if sid and string.find(obj.Image, myIdStr, 1, true) then
-                        obj.Image = string.gsub(obj.Image, myIdStr, tostring(sid))
-                    end
-                end
-            end)
-        end
-
         for _, obj in ipairs(playerGui:GetDescendants()) do
-            replaceInObj(obj)
+            replaceThumbIn(obj)
         end
 
         thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
-            task.delay(0.05, function() replaceInObj(obj) end)
-            task.delay(0.2, function() replaceInObj(obj) end)
-            task.delay(0.5, function() replaceInObj(obj) end)
+            replaceThumbIn(obj)
+            task.defer(function() replaceThumbIn(obj) end)
+        end)
+
+        local scanClock = 0
+        thumbConns[2] = RunService.Heartbeat:Connect(function(dt)
+            scanClock = scanClock + dt
+            if scanClock < 0.1 then return end
+            scanClock = 0
+            pcall(function()
+                local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                if not sid then return end
+                local s = tostring(sid)
+                for _, obj in ipairs(playerGui:GetDescendants()) do
+                    pcall(function()
+                        if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
+                            if string.find(obj.Image, myIdStr, 1, true) then
+                                obj.Image = string.gsub(obj.Image, myIdStr, s)
+                            end
+                        end
+                    end)
+                end
+            end)
         end)
     end
 
     local function stopThumbSpoof()
+        thumbSpoofActive = false
         for _, conn in pairs(thumbConns) do
             if conn then pcall(function() conn:Disconnect() end) end
         end
