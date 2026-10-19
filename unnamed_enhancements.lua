@@ -494202,61 +494202,37 @@ task.spawn(function()
     end
 
     -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
-    local thumbSpoofRunning = false
+    local RunService = game:GetService("RunService")
     local thumbConns = {}
-
-    local function replaceThumb(obj, myId, spoofId)
-        pcall(function()
-            if not (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) then return end
-            local img = obj.Image
-            if type(img) ~= "string" or img == "" then return end
-            if string.find(img, tostring(myId), 1, true) then
-                obj.Image = string.gsub(img, tostring(myId), tostring(spoofId))
-            end
-        end)
-    end
+    local myIdStr = tostring(LocalPlayer.UserId)
 
     local function startThumbSpoof()
         local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
         if not spoofId then return end
-        local myId = LocalPlayer.UserId
-        thumbSpoofRunning = true
+        local sidStr = tostring(spoofId)
 
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
 
-        thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
-            task.delay(0.1, function()
-                if thumbSpoofRunning then
-                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if sid then replaceThumb(obj, myId, sid) end
+        thumbConns[1] = RunService.RenderStepped:Connect(function()
+            pcall(function()
+                local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                if not sid then return end
+                local s = tostring(sid)
+                for _, obj in ipairs(playerGui:GetDescendants()) do
+                    pcall(function()
+                        if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" and obj.Image ~= "" then
+                            if string.find(obj.Image, myIdStr, 1, true) then
+                                obj.Image = string.gsub(obj.Image, myIdStr, s)
+                            end
+                        end
+                    end)
                 end
             end)
-        end)
-
-        task.spawn(function()
-            while thumbSpoofRunning do
-                pcall(function()
-                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if not sid then return end
-                    for _, obj in ipairs(playerGui:GetDescendants()) do
-                        if not thumbSpoofRunning then break end
-                        pcall(function()
-                            if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
-                                if string.find(obj.Image, tostring(myId), 1, true) then
-                                    obj.Image = string.gsub(obj.Image, tostring(myId), tostring(sid))
-                                end
-                            end
-                        end)
-                    end
-                end)
-                task.wait(0.5)
-            end
         end)
     end
 
     local function stopThumbSpoof()
-        thumbSpoofRunning = false
         for _, conn in pairs(thumbConns) do
             if conn then pcall(function() conn:Disconnect() end) end
         end
