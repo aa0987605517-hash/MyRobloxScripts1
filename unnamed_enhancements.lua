@@ -493671,7 +493671,28 @@ task.spawn(function()
                 return math.abs(c1.R - c2.R) < 0.12 and math.abs(c1.G - c2.G) < 0.12 and math.abs(c1.B - c2.B) < 0.12
             end
 
-            local function getSettings()
+            -- Cache of elements we've attached a glow stroke to
+            local tracked = setmetatable({}, { __mode = "k" })
+
+            local function tryAttach(obj)
+                if tracked[obj] then return end
+                if not (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("ImageLabel")) then return end
+                if obj.BackgroundTransparency >= 0.9 then return end
+                local accent = lib.AccentColor or defaultAccent
+                if not colorsMatch(obj.BackgroundColor3, accent) then return end
+                local stroke = Instance.new("UIStroke")
+                stroke.Name = "NeonGlowStroke"
+                stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                stroke.LineJoinMode = Enum.LineJoinMode.Round
+                stroke.Color = accent
+                stroke.Thickness = 2
+                stroke.Transparency = 0.5
+                stroke.Enabled = true
+                stroke.Parent = obj
+                tracked[obj] = stroke
+            end
+
+            local function applySettings()
                 local Tog = rawget(sharedEnv, 'Toggles') or {}
                 local Opt = rawget(sharedEnv, 'Options') or {}
                 local enabled = true
@@ -493680,57 +493701,53 @@ task.spawn(function()
                 if Tog.AG_Enabled and Tog.AG_Enabled.Value ~= nil then enabled = Tog.AG_Enabled.Value end
                 if Opt.AG_Thickness and Opt.AG_Thickness.Value ~= nil then thickness = Opt.AG_Thickness.Value end
                 if Opt.AG_Transparency and Opt.AG_Transparency.Value ~= nil then transparency = Opt.AG_Transparency.Value end
-                return enabled, thickness, transparency
-            end
-
-            local function applyGlow(obj, accent, enabled, thickness, transparency)
-                pcall(function()
-                    if not (obj:IsA("Frame") or obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("ImageLabel")) then return end
-                    if obj.BackgroundTransparency >= 0.9 then return end
-                    if not colorsMatch(obj.BackgroundColor3, accent) then return end
-
-                    local stroke = obj:FindFirstChild("NeonGlowStroke")
-                    if not enabled then
-                        if stroke then stroke:Destroy() end
-                        return
-                    end
-                    if not stroke then
-                        stroke = Instance.new("UIStroke")
-                        stroke.Name = "NeonGlowStroke"
-                        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                        stroke.LineJoinMode = Enum.LineJoinMode.Round
-                        stroke.Parent = obj
-                    end
-                    stroke.Color = accent
-                    stroke.Thickness = thickness
-                    stroke.Transparency = transparency
-                end)
-            end
-
-            local function scanAll()
                 local accent = lib.AccentColor or defaultAccent
-                local enabled, thickness, transparency = getSettings()
-                for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
-                    applyGlow(obj, accent, enabled, thickness, transparency)
+                for obj, stroke in pairs(tracked) do
+                    if stroke and stroke.Parent then
+                        stroke.Enabled = enabled
+                        stroke.Thickness = thickness
+                        stroke.Transparency = transparency
+                        stroke.Color = accent
+                    end
                 end
             end
 
-            scanAll()
+            -- Initial scan ONCE
+            for _, obj in ipairs(lib.ScreenGui:GetDescendants()) do
+                tryAttach(obj)
+            end
+            applySettings()
 
+            -- Attach to new elements as they appear (no polling)
             lib.ScreenGui.DescendantAdded:Connect(function(obj)
                 task.defer(function()
-                    local accent = lib.AccentColor or defaultAccent
-                    local enabled, thickness, transparency = getSettings()
-                    applyGlow(obj, accent, enabled, thickness, transparency)
+                    pcall(function()
+                        tryAttach(obj)
+                        -- Apply current settings to the newly-attached one
+                        local stroke = tracked[obj]
+                        if stroke then
+                            local Tog = rawget(sharedEnv, 'Toggles') or {}
+                            local Opt = rawget(sharedEnv, 'Options') or {}
+                            if Tog.AG_Enabled and Tog.AG_Enabled.Value ~= nil then stroke.Enabled = Tog.AG_Enabled.Value end
+                            if Opt.AG_Thickness and Opt.AG_Thickness.Value ~= nil then stroke.Thickness = Opt.AG_Thickness.Value end
+                            if Opt.AG_Transparency and Opt.AG_Transparency.Value ~= nil then stroke.Transparency = Opt.AG_Transparency.Value end
+                        end
+                    end)
                 end)
             end)
 
-            task.spawn(function()
-                while lib and lib.ScreenGui and lib.ScreenGui.Parent do
-                    task.wait(0.5)
-                    pcall(scanAll)
-                end
-            end)
+            -- Hook into slider/toggle callbacks so settings apply instantly, no polling
+            local Tog = rawget(sharedEnv, 'Toggles') or {}
+            local Opt = rawget(sharedEnv, 'Options') or {}
+            if Tog.AG_Enabled and Tog.AG_Enabled.OnChanged then
+                pcall(function() Tog.AG_Enabled:OnChanged(applySettings) end)
+            end
+            if Opt.AG_Thickness and Opt.AG_Thickness.OnChanged then
+                pcall(function() Opt.AG_Thickness:OnChanged(applySettings) end)
+            end
+            if Opt.AG_Transparency and Opt.AG_Transparency.OnChanged then
+                pcall(function() Opt.AG_Transparency:OnChanged(applySettings) end)
+            end
         end)
     end)
 
