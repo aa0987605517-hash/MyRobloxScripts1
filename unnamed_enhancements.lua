@@ -494517,6 +494517,8 @@ task.spawn(function()
     end
 
     local function elevatedCall(fn, ...)
+        -- Varargs do not close over into nested functions, so capture them here.
+        local args = table.pack(...)
         local old
         if getIdentity and setIdentity then
             pcall(function() old = getIdentity() end)
@@ -494526,7 +494528,7 @@ task.spawn(function()
                 local okSet = pcall(setIdentity, identity)
                 if not okSet then return false, "setthreadidentity failed" end
             end
-            local packed = table.pack(pcall(fn, ...))
+            local packed = table.pack(pcall(fn, table.unpack(args, 1, args.n)))
             if packed[1] then
                 return true, table.unpack(packed, 2, packed.n)
             end
