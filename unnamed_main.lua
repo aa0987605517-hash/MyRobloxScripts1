@@ -494434,8 +494434,27 @@ task.spawn(function()
         Toggles.IS_AvatarSpoof:OnChanged(function(val)
             if val then
                 task.spawn(startThumbSpoof)
+                -- Also apply char spoof immediately if we have a character
+                task.spawn(function()
+                    task.wait(0.5)
+                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if sid and LocalPlayer.Character then
+                        local ok, msg = applyDescription(sid)
+                        if ok then
+                            lib:Notify("[CharSpoof] " .. msg, 3)
+                        else
+                            lib:Notify("[CharSpoof] " .. tostring(msg), 4)
+                        end
+                    end
+                end)
             else
                 stopThumbSpoof()
+                task.spawn(function()
+                    local ok = pcall(restoreAvatarSpoof)
+                    if ok then
+                        lib:Notify("[CharSpoof] restored", 2)
+                    end
+                end)
             end
         end)
     end
@@ -494449,150 +494468,183 @@ task.spawn(function()
         end
     end)
 
-    -- === CHARACTER MODEL SPOOF (HumanoidDescription + proper accessory welding, KiciaHook-style) ===
-    local SPOOF_TYPES = { "Accessory", "Shirt", "Pants", "ShirtGraphic" }
-    local HEAD_DECOR_TYPES = { "Decal", "SurfaceAppearance", "SpecialMesh" }
-    local spoofedInstances = setmetatable({}, { __mode = "k" })
+    -- === CHARACTER MODEL SPOOF (client-side, KiciaHook standalone AvatarSpoof) ===
+    local AvatarSpoofState = {
+        spoofedInstances = {}, -- items we added to character
+        stashedInstances = {}, -- original items we removed (for restore)
+        originalHead = nil,    -- original head mesh/texture
+        originalColors = {},   -- original body part colors
+    }
 
-    local function isSpoofType(obj, list)
-        for _, t in ipairs(list) do
-            if obj:IsA(t) then return true end
+    local function applyAvatarSpoofToCharacter(character, userId)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            local start = os.clock()
+            repeat
+                humanoid = character:FindFirstChildOfClass("Humanoid")
+                task.wait(0.1)
+            until humanoid or (os.clock() - start > 10)
         end
-        return false
-    end
+        if not humanoid then return false, "no humanoid" end
 
-    local function findAttachmentIn(part)
-        for _, c in ipairs(part:GetChildren()) do
-            if c:IsA("Attachment") then return c end
+        local ok, model = pcall(function()
+            return Players:CreateHumanoidModelFromDescriptionAsync(
+                Players:GetHumanoidDescriptionFromUserId(userId),
+                humanoid.RigType
+            )
+        end)
+        if not ok or not model then
+            return false, "fetch/create failed: " .. tostring(model)
         end
-        return nil
-    end
 
-    local function findAttachmentInChar(char, name)
-        for _, p in ipairs(char:GetChildren()) do
-            if p:IsA("BasePart") then
-                local att = p:FindFirstChild(name)
-                if att and att:IsA("Attachment") then return att end
+        -- Stash original accessories/clothing (keep for restore, remove from character)
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                child.Parent = nil
+                table.insert(AvatarSpoofState.stashedInstances, child)
             end
         end
-        return nil
-    end
 
-    local function weldAccessory(accessory, char)
-        local handle = accessory:FindFirstChild("Handle")
-        if not handle or not handle:IsA("BasePart") then
-            accessory.Parent = char
-            return
+        -- Save original head state
+        local dstHead = character:FindFirstChild("Head")
+        if dstHead and dstHead:IsA("BasePart") and not AvatarSpoofState.originalHead then
+            local saved = { Transparency = dstHead.Transparency }
+            if dstHead:IsA("MeshPart") then
+                saved.MeshId = dstHead.MeshId
+                saved.TextureID = dstHead.TextureID
+            end
+            AvatarSpoofState.originalHead = saved
         end
-        -- Clear existing welds on handle
-        for _, c in ipairs(handle:GetChildren()) do
-            if c:IsA("Weld") or c:IsA("WeldConstraint") or c:IsA("ManualWeld") then
-                c:Destroy()
+
+        -- Save original body colors
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") and not AvatarSpoofState.originalColors[part] then
+                AvatarSpoofState.originalColors[part] = part.Color
             end
         end
-        local handleAtt = findAttachmentIn(handle)
-        if not handleAtt then
-            accessory.Parent = char
-            return
-        end
-        local charAtt = findAttachmentInChar(char, handleAtt.Name)
-        if not charAtt then
-            accessory.Parent = char
-            return
-        end
-        handle.Anchored = false
-        local weld = Instance.new("Weld")
-        weld.Name = "AccessoryWeld"
-        weld.Part0 = handle
-        weld.Part1 = charAtt.Parent
-        weld.C0 = handleAtt.CFrame
-        weld.C1 = charAtt.CFrame
-        weld.Parent = handle
-        accessory.Parent = char
-    end
 
-    local function clearSpoofed(char)
-        -- Remove previously spoofed items + any existing accessory/clothing from char
-        for _, obj in ipairs(char:GetChildren()) do
-            if spoofedInstances[obj] or isSpoofType(obj, SPOOF_TYPES) then
-                pcall(function() obj:Destroy() end)
-            end
-        end
-        local head = char:FindFirstChild("Head")
-        if head then
-            for _, obj in ipairs(head:GetChildren()) do
-                if isSpoofType(obj, HEAD_DECOR_TYPES) then
-                    pcall(function() obj:Destroy() end)
+        local copied = 0
+
+        -- Transfer accessories/shirts/pants/graphics from temp model
+        for _, child in ipairs(model:GetChildren()) do
+            if child:IsA("Accessory") then
+                child.Parent = nil
+                AvatarSpoofState.spoofedInstances[child] = true
+
+                local handle = child:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    for _, w in ipairs(handle:GetChildren()) do
+                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
+                            w:Destroy()
+                        end
+                    end
+
+                    local att = nil
+                    for _, a in ipairs(handle:GetChildren()) do
+                        if a:IsA("Attachment") then att = a; break end
+                    end
+
+                    if att then
+                        local target = nil
+                        for _, part in ipairs(character:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                local found = part:FindFirstChild(att.Name)
+                                if found and found:IsA("Attachment") then
+                                    target = found; break
+                                end
+                            end
+                        end
+
+                        if target then
+                            handle.Anchored = false
+                            local weld = Instance.new("Weld")
+                            weld.Name = "AccessoryWeld"
+                            weld.Part0 = handle
+                            weld.Part1 = target.Parent
+                            weld.C0 = att.CFrame
+                            weld.C1 = target.CFrame
+                            weld.Parent = handle
+                        end
+                    end
+                end
+
+                child.Parent = character
+                copied = copied + 1
+            elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                AvatarSpoofState.spoofedInstances[child] = true
+                child.Parent = character
+                copied = copied + 1
+            elseif child:IsA("BasePart") then
+                local match = character:FindFirstChild(child.Name)
+                if match and match:IsA("BasePart") then
+                    match.Color = child.Color
                 end
             end
         end
+
+        -- Head mesh/texture
+        local srcHead = model:FindFirstChild("Head")
+        if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
+            dstHead.Transparency = srcHead.Transparency
+            if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
+                dstHead.MeshId = srcHead.MeshId
+                dstHead.TextureID = srcHead.TextureID
+            end
+        end
+
+        pcall(function() model:Destroy() end)
+        return true, "spoofed with " .. copied .. " items"
+    end
+
+    local function restoreAvatarSpoof()
+        local character = LocalPlayer.Character
+        if not character then
+            -- Just destroy stashed items if no character
+            for _, item in ipairs(AvatarSpoofState.stashedInstances) do
+                pcall(function() item:Destroy() end)
+            end
+            AvatarSpoofState.stashedInstances = {}
+            AvatarSpoofState.spoofedInstances = {}
+            return
+        end
+
+        -- Remove our spoofed items
+        for item in pairs(AvatarSpoofState.spoofedInstances) do
+            pcall(function() item:Destroy() end)
+        end
+        AvatarSpoofState.spoofedInstances = {}
+
+        -- Restore stashed items
+        for _, item in ipairs(AvatarSpoofState.stashedInstances) do
+            pcall(function() item.Parent = character end)
+        end
+        AvatarSpoofState.stashedInstances = {}
+
+        -- Restore head
+        local head = character:FindFirstChild("Head")
+        if head and head:IsA("BasePart") and AvatarSpoofState.originalHead then
+            local saved = AvatarSpoofState.originalHead
+            head.Transparency = saved.Transparency or 0
+            if head:IsA("MeshPart") and saved.MeshId then
+                head.MeshId = saved.MeshId
+                head.TextureID = saved.TextureID
+            end
+        end
+        AvatarSpoofState.originalHead = nil
+
+        -- Restore body colors
+        for part, color in pairs(AvatarSpoofState.originalColors) do
+            if part and part.Parent then
+                pcall(function() part.Color = color end)
+            end
+        end
+        AvatarSpoofState.originalColors = {}
     end
 
     local function applyDescription(targetUserId)
-        local myChar = LocalPlayer.Character
-        if not myChar then return false, "no character" end
-        local hum = myChar:FindFirstChildOfClass("Humanoid")
-        if not hum then
-            for i = 1, 30 do
-                hum = myChar:FindFirstChildOfClass("Humanoid")
-                if hum then break end
-                task.wait(0.1)
-            end
-        end
-        if not hum then return false, "no humanoid" end
-
-        local okDesc, desc = pcall(function()
-            return Players:GetHumanoidDescriptionFromUserIdAsync(targetUserId)
-        end)
-        if not okDesc or not desc then return false, "get description failed: " .. tostring(desc) end
-
-        local okModel, tempModel = pcall(function()
-            return Players:CreateHumanoidModelFromDescriptionAsync(desc, hum.RigType)
-        end)
-        if not okModel or not tempModel then return false, "create model failed: " .. tostring(tempModel) end
-
-        clearSpoofed(myChar)
-
-        local copied = 0
-        for _, obj in ipairs(tempModel:GetChildren()) do
-            pcall(function()
-                if obj:IsA("Accessory") then
-                    obj.Parent = nil
-                    spoofedInstances[obj] = true
-                    weldAccessory(obj, myChar)
-                    copied = copied + 1
-                elseif obj:IsA("Shirt") or obj:IsA("Pants") or obj:IsA("ShirtGraphic") then
-                    spoofedInstances[obj] = true
-                    obj.Parent = myChar
-                    copied = copied + 1
-                elseif obj:IsA("BasePart") then
-                    local myPart = myChar:FindFirstChild(obj.Name)
-                    if myPart and myPart:IsA("BasePart") then
-                        myPart.Color = obj.Color
-                    end
-                end
-            end)
-        end
-
-        -- Head handling (face, hair decals, SurfaceAppearance, SpecialMesh)
-        local tgtHead = tempModel:FindFirstChild("Head")
-        local myHead = myChar:FindFirstChild("Head")
-        if tgtHead and myHead and tgtHead:IsA("BasePart") and myHead:IsA("BasePart") then
-            for _, obj in ipairs(tgtHead:GetChildren()) do
-                if isSpoofType(obj, HEAD_DECOR_TYPES) then
-                    obj.Parent = myHead
-                    copied = copied + 1
-                end
-            end
-            myHead.Transparency = tgtHead.Transparency
-            if tgtHead:IsA("MeshPart") and myHead:IsA("MeshPart") then
-                myHead.MeshId = tgtHead.MeshId
-                myHead.TextureID = tgtHead.TextureID
-            end
-        end
-
-        pcall(function() tempModel:Destroy() end)
-        return true, "spoofed with " .. copied .. " items"
+        local char = LocalPlayer.Character
+        if not char then return false, "no character" end
+        return applyAvatarSpoofToCharacter(char, targetUserId)
     end
 
     local function tryCopyCharacterFrom(targetId)
