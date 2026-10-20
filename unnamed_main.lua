@@ -494500,6 +494500,107 @@ task.spawn(function()
         currentlyApplying = false,
     }
 
+    -- === THREAD IDENTITY ELEVATION (KiciaHook b3) ===
+    -- GetHumanoidDescriptionFromUserId / CreateHumanoidModelFromDescriptionAsync are
+    -- server-context APIs. Executor threads run at an identity that Roblox rejects for
+    -- these, so the call must be made with an elevated identity and restored after.
+    local setIdentity = setthreadidentity or set_thread_identity or setidentity
+    local getIdentity = getthreadidentity or get_thread_identity or getidentity
+
+    -- cloneref'd instances are not == to the raw instance (KiciaHook b2)
+    local function sameInstance(a, b)
+        if compareinstances then
+            local ok, res = pcall(compareinstances, a, b)
+            if ok then return res end
+        end
+        return a == b
+    end
+
+    local function elevatedCall(fn, ...)
+        local old
+        if getIdentity and setIdentity then
+            pcall(function() old = getIdentity() end)
+        end
+        local function attempt(identity)
+            if identity and setIdentity then
+                local okSet = pcall(setIdentity, identity)
+                if not okSet then return false, "setthreadidentity failed" end
+            end
+            local packed = table.pack(pcall(fn, ...))
+            if packed[1] then
+                return true, table.unpack(packed, 2, packed.n)
+            end
+            return false, packed[2]
+        end
+
+        -- Try identity 8 (highest), then 2, then whatever we started with
+        local ok, res = attempt(setIdentity and 8 or nil)
+        if not ok and setIdentity then
+            ok, res = attempt(2)
+        end
+        if not ok and setIdentity then
+            ok, res = attempt(old)
+        end
+
+        if old and setIdentity then
+            pcall(setIdentity, old)
+        end
+        return ok, res
+    end
+
+    -- Raw (non-cloneref) Players service: some avatar APIs reject cloneref'd instances
+    local RawPlayers = game:GetService("Players")
+
+    local function fetchDescription(userId)
+        local attempts = {
+            { "GetHumanoidDescriptionFromUserIdAsync (raw)", function()
+                return RawPlayers:GetHumanoidDescriptionFromUserIdAsync(userId)
+            end },
+            { "GetHumanoidDescriptionFromUserId (raw)", function()
+                return RawPlayers:GetHumanoidDescriptionFromUserId(userId)
+            end },
+            { "GetHumanoidDescriptionFromUserIdAsync (cloneref)", function()
+                return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
+            end },
+            { "GetHumanoidDescriptionFromUserId (cloneref)", function()
+                return Players:GetHumanoidDescriptionFromUserId(userId)
+            end },
+        }
+        local lastErr = "no attempt ran"
+        for _, entry in ipairs(attempts) do
+            local ok, res = elevatedCall(entry[2])
+            if ok and typeof(res) == "Instance" then
+                warn("[CharSpoof] description OK via " .. entry[1])
+                return res
+            end
+            lastErr = entry[1] .. " -> " .. tostring(res)
+            warn("[CharSpoof] " .. lastErr)
+        end
+        return nil, lastErr
+    end
+
+    local function buildModel(description, rigType)
+        local attempts = {
+            { "CreateHumanoidModelFromDescriptionAsync (raw)", function()
+                return RawPlayers:CreateHumanoidModelFromDescriptionAsync(description, rigType)
+            end },
+            { "CreateHumanoidModelFromDescriptionAsync (cloneref)", function()
+                return Players:CreateHumanoidModelFromDescriptionAsync(description, rigType)
+            end },
+        }
+        local lastErr = "no attempt ran"
+        for _, entry in ipairs(attempts) do
+            local ok, res = elevatedCall(entry[2])
+            if ok and typeof(res) == "Instance" then
+                warn("[CharSpoof] model OK via " .. entry[1])
+                return res
+            end
+            lastErr = entry[1] .. " -> " .. tostring(res)
+            warn("[CharSpoof] " .. lastErr)
+        end
+        return nil, lastErr
+    end
+
     local function applyAvatarSpoofToCharacter(character, userId)
         if AvatarSpoofState.currentlyApplying then return false, "already applying" end
         AvatarSpoofState.currentlyApplying = true
@@ -494520,30 +494621,28 @@ task.spawn(function()
         -- Use cached description to avoid re-fetching from Roblox servers each time
         local description = AvatarSpoofState.cachedDescription
         if not description or AvatarSpoofState.cachedDescriptionId ~= userId then
-            local okDesc, desc = pcall(function()
-                return Players:GetHumanoidDescriptionFromUserId(userId)
-            end)
-            if not okDesc or not desc then
-                -- try async version
-                okDesc, desc = pcall(function()
-                    return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
-                end)
-            end
-            if not okDesc or not desc then
+            local desc, err = fetchDescription(userId)
+            if not desc then
                 AvatarSpoofState.currentlyApplying = false
-                return false, "GetDescription failed: " .. tostring(desc)
+                return false, "GetDescription: " .. tostring(err)
             end
             description = desc
             AvatarSpoofState.cachedDescription = desc
             AvatarSpoofState.cachedDescriptionId = userId
         end
 
-        local ok, model = pcall(function()
-            return Players:CreateHumanoidModelFromDescriptionAsync(description, humanoid.RigType)
-        end)
-        if not ok or not model then
+        local model, modelErr = buildModel(description, humanoid.RigType)
+        if not model then
+            -- Fallback: apply the description straight onto our Humanoid.
+            local okApply = elevatedCall(function()
+                humanoid:ApplyDescription(description)
+                return true
+            end)
             AvatarSpoofState.currentlyApplying = false
-            return false, "CreateModel failed: " .. tostring(model)
+            if okApply then
+                return true, "applied via ApplyDescription fallback"
+            end
+            return false, "CreateModel: " .. tostring(modelErr)
         end
 
         -- Stash original accessories/clothing (keep for restore, remove from character)
@@ -494847,7 +494946,9 @@ task.spawn(function()
         -- Find Players upvalue
         local playersUpvalIdx, originalPlayers
         for k, v in debug.getupvalues(preloadFn) do
-            if typeof(v) == "Instance" and v == Players then
+            -- cloneref'd Players never compares == to the game's raw instance,
+            -- so use compareinstances when the executor provides it (KiciaHook b2).
+            if typeof(v) == "Instance" and sameInstance(v, Players) then
                 playersUpvalIdx = k
                 originalPlayers = v
                 break
@@ -494863,10 +494964,18 @@ task.spawn(function()
                 if spoofId and userId == LocalPlayer.UserId then
                     userId = spoofId
                 end
-                return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
+                local ok, res = elevatedCall(function()
+                    return RawPlayers:GetHumanoidDescriptionFromUserIdAsync(userId)
+                end)
+                if ok then return res end
+                return RawPlayers:GetHumanoidDescriptionFromUserIdAsync(userId)
             end,
             CreateHumanoidModelFromDescriptionAsync = function(_, desc, rigType, assetType)
-                return Players:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
+                local ok, res = elevatedCall(function()
+                    return RawPlayers:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
+                end)
+                if ok then return res end
+                return RawPlayers:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
             end,
         }
         local proxy = setmetatable(dummy, { __index = function(_, key)
