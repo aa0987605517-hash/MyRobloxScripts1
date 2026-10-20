@@ -494651,40 +494651,94 @@ task.spawn(function()
         return applyDescription(targetId)
     end
 
-    -- === RIVALS ClientDueler._PreloadCharacterModel HOOK (KiciaHook b4) ===
-    -- Rivals loads character models via its own ClientDueler. We hook its
-    -- Players upvalue so GetHumanoidDescriptionFromUserIdAsync returns the
-    -- spoofed description for OUR UserId.
-    local duelerHook = { installed = false, restore = nil }
+    -- === RIVALS DuelerCloneSpoof (KiciaHook b4 full port) ===
+    local duelerSpoof = {
+        installed = false,
+        restore = nil,
+        ClientDueler = nil,
+        DuelController = nil,
+        preloadFn = nil,
+    }
 
-    local function tryInstallDuelerHook()
-        if duelerHook.installed then return true end
-        if not getloadedmodules or not debug or not debug.getupvalues or not debug.setupvalue then
-            return false
-        end
-
-        local ClientDueler
-        local ok = pcall(function()
-            for _, mod in ipairs(getloadedmodules()) do
-                if mod.Name == "ClientDueler" then
-                    local okRequire, result = pcall(require, mod)
-                    if okRequire and type(result) == "table" then
-                        ClientDueler = result
-                        return
-                    end
+    local function findModuleByName(name)
+        if not getloadedmodules then return nil end
+        for _, mod in ipairs(getloadedmodules()) do
+            if mod.Name == name then
+                local ok, result = pcall(require, mod)
+                if ok and type(result) == "table" then
+                    return result
                 end
             end
-        end)
+        end
+        return nil
+    end
 
-        if not ok or not ClientDueler then return false end
-
-        -- _PreloadCharacterModel is in metatable's __index
+    local function getPreloadFn(ClientDueler)
         local mt = getmetatable(ClientDueler)
-        local idx = mt and rawget(mt, "__index")
-        if type(idx) ~= "table" then return false end
+        if not mt then return nil end
+        local idx = rawget(mt, "__index")
+        if type(idx) ~= "table" then return nil end
+        local fn = rawget(idx, "_PreloadCharacterModel")
+        if type(fn) == "function" then return fn end
+        return nil
+    end
 
-        local preloadFn = rawget(idx, "_PreloadCharacterModel")
-        if type(preloadFn) ~= "function" then return false end
+    local function getSpoofId()
+        if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return nil end
+        return tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+    end
+
+    -- Rebuild preloaded character model for LocalPlayer (b4._RebuildPreloadedModel)
+    local function rebuildPreloadedModel(dueler)
+        pcall(function()
+            local preloaded = rawget(dueler, "_preloaded_character_model")
+            if preloaded == nil then return end
+            if rawget(dueler, "_destroyed") then return end
+            local clientDuel = rawget(dueler, "ClientDuel")
+            if clientDuel == nil then return end
+            dueler._preloaded_character_model = nil
+            dueler._is_preloading_character_model = false
+            preloaded:Destroy()
+            task.spawn(function()
+                pcall(duelerSpoof.preloadFn, dueler)
+            end)
+        end)
+    end
+
+    -- Find current dueler object for LocalPlayer, rebuild its model
+    local function refreshLocalPlayerDueler()
+        if not duelerSpoof.DuelController then return end
+        local ok, objects = pcall(function()
+            return rawget(duelerSpoof.DuelController, "Objects")
+        end)
+        if not ok or type(objects) ~= "table" then return end
+
+        for _, duel in pairs(objects) do
+            pcall(function()
+                local duelers = rawget(duel, "Duelers")
+                if type(duelers) ~= "table" then return end
+                for _, dueler in pairs(duelers) do
+                    local player = rawget(dueler, "Player")
+                    if player == LocalPlayer then
+                        rebuildPreloadedModel(dueler)
+                    end
+                end
+            end)
+        end
+    end
+
+    local function tryInstallDuelerHook()
+        if duelerSpoof.installed then return true end
+        if not debug or not debug.getupvalues or not debug.setupvalue then return false end
+
+        local ClientDueler = findModuleByName("ClientDueler")
+        if not ClientDueler then return false end
+
+        local DuelController = findModuleByName("DuelController")
+        -- DuelController optional for refresh; hook still works without
+
+        local preloadFn = getPreloadFn(ClientDueler)
+        if not preloadFn then return false end
 
         -- Find Players upvalue
         local playersUpvalIdx, originalPlayers
@@ -494695,26 +494749,24 @@ task.spawn(function()
                 break
             end
         end
-
         if not playersUpvalIdx then return false end
 
-        -- Build proxy that spoofs GetHumanoidDescriptionFromUserIdAsync
-        local proxy = setmetatable({}, { __index = function(_, key)
-            if key == "GetHumanoidDescriptionFromUserIdAsync" then
-                return function(_, userId)
-                    local spoofId = userId
-                    if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value and userId == LocalPlayer.UserId then
-                        local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                        if sid then spoofId = sid end
-                    end
-                    return Players:GetHumanoidDescriptionFromUserIdAsync(spoofId)
+        -- Build proxy with GetHumanoidDescriptionFromUserIdAsync hooked
+        local dummy = Color3.new()
+        local methods = {
+            GetHumanoidDescriptionFromUserIdAsync = function(_, userId)
+                local spoofId = getSpoofId()
+                if spoofId and userId == LocalPlayer.UserId then
+                    userId = spoofId
                 end
-            elseif key == "CreateHumanoidModelFromDescriptionAsync" then
-                return function(_, desc, rigType, assetType)
-                    return Players:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
-                end
-            end
-            return Players[key]
+                return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
+            end,
+            CreateHumanoidModelFromDescriptionAsync = function(_, desc, rigType, assetType)
+                return Players:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
+            end,
+        }
+        local proxy = setmetatable(dummy, { __index = function(_, key)
+            return methods[key] or Players[key]
         end })
 
         local okHook = pcall(function()
@@ -494722,8 +494774,11 @@ task.spawn(function()
         end)
         if not okHook then return false end
 
-        duelerHook.installed = true
-        duelerHook.restore = { fn = preloadFn, idx = playersUpvalIdx, original = originalPlayers }
+        duelerSpoof.installed = true
+        duelerSpoof.ClientDueler = ClientDueler
+        duelerSpoof.DuelController = DuelController
+        duelerSpoof.preloadFn = preloadFn
+        duelerSpoof.restore = { fn = preloadFn, idx = playersUpvalIdx, original = originalPlayers }
         return true
     end
 
@@ -494737,6 +494792,29 @@ task.spawn(function()
             end
         end
     end)
+
+    -- When toggle flips on, also force a dueler model rebuild so the spoof shows up right away
+    if Toggles.IS_AvatarSpoof then
+        local origCb = Toggles.IS_AvatarSpoof.Callback
+        Toggles.IS_AvatarSpoof:OnChanged(function(val)
+            if val and duelerSpoof.installed then
+                task.spawn(function()
+                    task.wait(0.3)
+                    refreshLocalPlayerDueler()
+                end)
+            end
+        end)
+    end
+    if Options.IS_AvatarUserId and Options.IS_AvatarUserId.OnChanged then
+        Options.IS_AvatarUserId:OnChanged(function()
+            if duelerSpoof.installed and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                task.spawn(function()
+                    task.wait(0.3)
+                    refreshLocalPlayerDueler()
+                end)
+            end
+        end)
+    end
 
     local function applyCharSpoof()
         if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
