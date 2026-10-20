@@ -494434,25 +494434,43 @@ task.spawn(function()
         Toggles.IS_AvatarSpoof:OnChanged(function(val)
             if val then
                 task.spawn(startThumbSpoof)
-                -- Also apply char spoof immediately if we have a character
                 task.spawn(function()
-                    task.wait(0.5)
                     local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if sid and LocalPlayer.Character then
-                        local ok, msg = applyDescription(sid)
-                        if ok then
-                            lib:Notify("[CharSpoof] " .. msg, 3)
-                        else
-                            lib:Notify("[CharSpoof] " .. tostring(msg), 4)
-                        end
+                    if not sid then
+                        lib:Notify("[CharSpoof] no UserId set", 4)
+                        return
                     end
+                    -- Wait briefly for character
+                    local char = LocalPlayer.Character
+                    for i = 1, 30 do
+                        if char then break end
+                        task.wait(0.2)
+                        char = LocalPlayer.Character
+                    end
+                    if not char then
+                        lib:Notify("[CharSpoof] no character", 4)
+                        return
+                    end
+                    local ok, msg = applyAvatarSpoofToCharacter(char, sid)
+                    if ok then
+                        lib:Notify("[CharSpoof] " .. msg, 3)
+                    else
+                        lib:Notify("[CharSpoof] FAIL: " .. tostring(msg), 5)
+                    end
+                    startCharacterMonitor()
                 end)
             else
                 stopThumbSpoof()
                 task.spawn(function()
-                    local ok = pcall(restoreAvatarSpoof)
+                    if AvatarSpoofState.childConn then
+                        pcall(function() AvatarSpoofState.childConn:Disconnect() end)
+                        AvatarSpoofState.childConn = nil
+                    end
+                    local ok, err = pcall(restoreAvatarSpoof)
                     if ok then
                         lib:Notify("[CharSpoof] restored", 2)
+                    else
+                        lib:Notify("[CharSpoof] restore err: " .. tostring(err), 4)
                     end
                 end)
             end
@@ -494468,15 +494486,24 @@ task.spawn(function()
         end
     end)
 
-    -- === CHARACTER MODEL SPOOF (client-side, KiciaHook standalone AvatarSpoof) ===
+    -- === CHARACTER MODEL SPOOF (persistent monitor, auto-reapply) ===
     local AvatarSpoofState = {
         spoofedInstances = {}, -- items we added to character
         stashedInstances = {}, -- original items we removed (for restore)
         originalHead = nil,    -- original head mesh/texture
         originalColors = {},   -- original body part colors
+        activeChar = nil,      -- character currently being monitored
+        childConn = nil,       -- ChildAdded connection
+        monitorThread = nil,   -- persistent reapply loop
+        cachedDescription = nil,
+        cachedDescriptionId = nil,
+        currentlyApplying = false,
     }
 
     local function applyAvatarSpoofToCharacter(character, userId)
+        if AvatarSpoofState.currentlyApplying then return false, "already applying" end
+        AvatarSpoofState.currentlyApplying = true
+
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid then
             local start = os.clock()
@@ -494485,16 +494512,38 @@ task.spawn(function()
                 task.wait(0.1)
             until humanoid or (os.clock() - start > 10)
         end
-        if not humanoid then return false, "no humanoid" end
+        if not humanoid then
+            AvatarSpoofState.currentlyApplying = false
+            return false, "no humanoid"
+        end
+
+        -- Use cached description to avoid re-fetching from Roblox servers each time
+        local description = AvatarSpoofState.cachedDescription
+        if not description or AvatarSpoofState.cachedDescriptionId ~= userId then
+            local okDesc, desc = pcall(function()
+                return Players:GetHumanoidDescriptionFromUserId(userId)
+            end)
+            if not okDesc or not desc then
+                -- try async version
+                okDesc, desc = pcall(function()
+                    return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
+                end)
+            end
+            if not okDesc or not desc then
+                AvatarSpoofState.currentlyApplying = false
+                return false, "GetDescription failed: " .. tostring(desc)
+            end
+            description = desc
+            AvatarSpoofState.cachedDescription = desc
+            AvatarSpoofState.cachedDescriptionId = userId
+        end
 
         local ok, model = pcall(function()
-            return Players:CreateHumanoidModelFromDescriptionAsync(
-                Players:GetHumanoidDescriptionFromUserId(userId),
-                humanoid.RigType
-            )
+            return Players:CreateHumanoidModelFromDescriptionAsync(description, humanoid.RigType)
         end)
         if not ok or not model then
-            return false, "fetch/create failed: " .. tostring(model)
+            AvatarSpoofState.currentlyApplying = false
+            return false, "CreateModel failed: " .. tostring(model)
         end
 
         -- Stash original accessories/clothing (keep for restore, remove from character)
@@ -494593,7 +494642,62 @@ task.spawn(function()
         end
 
         pcall(function() model:Destroy() end)
+        AvatarSpoofState.currentlyApplying = false
         return true, "spoofed with " .. copied .. " items"
+    end
+
+    -- Monitor: watch character for Rivals re-adding accessories, auto-stash them
+    local function startCharacterMonitor()
+        -- Clean up old monitor
+        if AvatarSpoofState.childConn then
+            pcall(function() AvatarSpoofState.childConn:Disconnect() end)
+            AvatarSpoofState.childConn = nil
+        end
+        if AvatarSpoofState.monitorThread then
+            pcall(function() task.cancel(AvatarSpoofState.monitorThread) end)
+            AvatarSpoofState.monitorThread = nil
+        end
+
+        local character = LocalPlayer.Character
+        if not character then return end
+        AvatarSpoofState.activeChar = character
+
+        -- Hook ChildAdded: any new Accessory/Shirt/Pants that we didn't add → stash it
+        AvatarSpoofState.childConn = character.ChildAdded:Connect(function(child)
+            task.defer(function()
+                if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
+                if child.Parent ~= character then return end
+                if AvatarSpoofState.spoofedInstances[child] then return end
+                if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                    pcall(function()
+                        child.Parent = nil
+                        table.insert(AvatarSpoofState.stashedInstances, child)
+                    end)
+                end
+            end)
+        end)
+
+        -- Persistent reapply loop (every 2.5s, if toggle on and nothing changed, no-op)
+        AvatarSpoofState.monitorThread = task.spawn(function()
+            while Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value do
+                task.wait(2.5)
+                if AvatarSpoofState.activeChar ~= LocalPlayer.Character then
+                    AvatarSpoofState.activeChar = LocalPlayer.Character
+                    if AvatarSpoofState.activeChar then
+                        -- Character changed - reapply
+                        local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                        if sid then
+                            pcall(applyAvatarSpoofToCharacter, AvatarSpoofState.activeChar, sid)
+                        end
+                    end
+                end
+            end
+            -- Toggle turned off - cleanup
+            if AvatarSpoofState.childConn then
+                pcall(function() AvatarSpoofState.childConn:Disconnect() end)
+                AvatarSpoofState.childConn = nil
+            end
+        end)
     end
 
     local function restoreAvatarSpoof()
