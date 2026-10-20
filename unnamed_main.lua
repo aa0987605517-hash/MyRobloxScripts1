@@ -494449,77 +494449,154 @@ task.spawn(function()
         end
     end)
 
-    -- === CHARACTER MODEL SPOOF (copies target player's BODY meshes only) ===
-    local BODY_PARTS = {
-        -- R6
-        Head = true, Torso = true,
-        ["Left Arm"] = true, ["Right Arm"] = true,
-        ["Left Leg"] = true, ["Right Leg"] = true,
-        -- R15
-        UpperTorso = true, LowerTorso = true,
-        LeftUpperArm = true, LeftLowerArm = true, LeftHand = true,
-        RightUpperArm = true, RightLowerArm = true, RightHand = true,
-        LeftUpperLeg = true, LeftLowerLeg = true, LeftFoot = true,
-        RightUpperLeg = true, RightLowerLeg = true, RightFoot = true,
-    }
+    -- === CHARACTER MODEL SPOOF (HumanoidDescription + proper accessory welding, KiciaHook-style) ===
+    local SPOOF_TYPES = { "Accessory", "Shirt", "Pants", "ShirtGraphic" }
+    local HEAD_DECOR_TYPES = { "Decal", "SurfaceAppearance", "SpecialMesh" }
+    local spoofedInstances = setmetatable({}, { __mode = "k" })
 
-    local function tryCopyCharacterFrom(targetId)
+    local function isSpoofType(obj, list)
+        for _, t in ipairs(list) do
+            if obj:IsA(t) then return true end
+        end
+        return false
+    end
+
+    local function findAttachmentIn(part)
+        for _, c in ipairs(part:GetChildren()) do
+            if c:IsA("Attachment") then return c end
+        end
+        return nil
+    end
+
+    local function findAttachmentInChar(char, name)
+        for _, p in ipairs(char:GetChildren()) do
+            if p:IsA("BasePart") then
+                local att = p:FindFirstChild(name)
+                if att and att:IsA("Attachment") then return att end
+            end
+        end
+        return nil
+    end
+
+    local function weldAccessory(accessory, char)
+        local handle = accessory:FindFirstChild("Handle")
+        if not handle or not handle:IsA("BasePart") then
+            accessory.Parent = char
+            return
+        end
+        -- Clear existing welds on handle
+        for _, c in ipairs(handle:GetChildren()) do
+            if c:IsA("Weld") or c:IsA("WeldConstraint") or c:IsA("ManualWeld") then
+                c:Destroy()
+            end
+        end
+        local handleAtt = findAttachmentIn(handle)
+        if not handleAtt then
+            accessory.Parent = char
+            return
+        end
+        local charAtt = findAttachmentInChar(char, handleAtt.Name)
+        if not charAtt then
+            accessory.Parent = char
+            return
+        end
+        handle.Anchored = false
+        local weld = Instance.new("Weld")
+        weld.Name = "AccessoryWeld"
+        weld.Part0 = handle
+        weld.Part1 = charAtt.Parent
+        weld.C0 = handleAtt.CFrame
+        weld.C1 = charAtt.CFrame
+        weld.Parent = handle
+        accessory.Parent = char
+    end
+
+    local function clearSpoofed(char)
+        -- Remove previously spoofed items + any existing accessory/clothing from char
+        for _, obj in ipairs(char:GetChildren()) do
+            if spoofedInstances[obj] or isSpoofType(obj, SPOOF_TYPES) then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+        local head = char:FindFirstChild("Head")
+        if head then
+            for _, obj in ipairs(head:GetChildren()) do
+                if isSpoofType(obj, HEAD_DECOR_TYPES) then
+                    pcall(function() obj:Destroy() end)
+                end
+            end
+        end
+    end
+
+    local function applyDescription(targetUserId)
         local myChar = LocalPlayer.Character
         if not myChar then return false, "no character" end
-
-        local target
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.UserId == targetId then
-                target = p
-                break
+        local hum = myChar:FindFirstChildOfClass("Humanoid")
+        if not hum then
+            for i = 1, 30 do
+                hum = myChar:FindFirstChildOfClass("Humanoid")
+                if hum then break end
+                task.wait(0.1)
             end
         end
-        if not target then return false, "target not in server" end
+        if not hum then return false, "no humanoid" end
 
-        local targetChar = target.Character
-        if not targetChar then return false, "target has no character" end
+        local okDesc, desc = pcall(function()
+            return Players:GetHumanoidDescriptionFromUserIdAsync(targetUserId)
+        end)
+        if not okDesc or not desc then return false, "get description failed: " .. tostring(desc) end
 
-        for i = 1, 20 do
-            if targetChar:FindFirstChildOfClass("Humanoid") then break end
-            task.wait(0.1)
-        end
+        local okModel, tempModel = pcall(function()
+            return Players:CreateHumanoidModelFromDescriptionAsync(desc, hum.RigType)
+        end)
+        if not okModel or not tempModel then return false, "create model failed: " .. tostring(tempModel) end
+
+        clearSpoofed(myChar)
 
         local copied = 0
-        -- Only iterate direct children of character (body parts), not weapons/accessories
-        for _, part in ipairs(targetChar:GetChildren()) do
-            if BODY_PARTS[part.Name] then
-                pcall(function()
-                    local myPart = myChar:FindFirstChild(part.Name)
-                    if myPart then
-                        if part:IsA("MeshPart") and myPart:IsA("MeshPart") then
-                            myPart.MeshId = part.MeshId
-                            myPart.TextureID = part.TextureID
-                            myPart.Color = part.Color
-                            copied = copied + 1
-                        elseif part:IsA("BasePart") and myPart:IsA("BasePart") then
-                            myPart.Color = part.Color
-                            -- Only replace SpecialMesh of the body part itself (e.g. Head)
-                            local tgtMesh = part:FindFirstChildOfClass("SpecialMesh")
-                            local myMesh = myPart:FindFirstChildOfClass("SpecialMesh")
-                            if tgtMesh and myMesh then
-                                myMesh.MeshId = tgtMesh.MeshId
-                                myMesh.TextureId = tgtMesh.TextureId
-                                copied = copied + 1
-                            end
-                            -- Face decal on head
-                            if part.Name == "Head" then
-                                local tgtDecal = part:FindFirstChild("face")
-                                local myDecal = myPart:FindFirstChild("face")
-                                if tgtDecal and myDecal then
-                                    myDecal.Texture = tgtDecal.Texture
-                                end
-                            end
-                        end
+        for _, obj in ipairs(tempModel:GetChildren()) do
+            pcall(function()
+                if obj:IsA("Accessory") then
+                    obj.Parent = nil
+                    spoofedInstances[obj] = true
+                    weldAccessory(obj, myChar)
+                    copied = copied + 1
+                elseif obj:IsA("Shirt") or obj:IsA("Pants") or obj:IsA("ShirtGraphic") then
+                    spoofedInstances[obj] = true
+                    obj.Parent = myChar
+                    copied = copied + 1
+                elseif obj:IsA("BasePart") then
+                    local myPart = myChar:FindFirstChild(obj.Name)
+                    if myPart and myPart:IsA("BasePart") then
+                        myPart.Color = obj.Color
                     end
-                end)
+                end
+            end)
+        end
+
+        -- Head handling (face, hair decals, SurfaceAppearance, SpecialMesh)
+        local tgtHead = tempModel:FindFirstChild("Head")
+        local myHead = myChar:FindFirstChild("Head")
+        if tgtHead and myHead and tgtHead:IsA("BasePart") and myHead:IsA("BasePart") then
+            for _, obj in ipairs(tgtHead:GetChildren()) do
+                if isSpoofType(obj, HEAD_DECOR_TYPES) then
+                    obj.Parent = myHead
+                    copied = copied + 1
+                end
+            end
+            myHead.Transparency = tgtHead.Transparency
+            if tgtHead:IsA("MeshPart") and myHead:IsA("MeshPart") then
+                myHead.MeshId = tgtHead.MeshId
+                myHead.TextureID = tgtHead.TextureID
             end
         end
-        return true, "copied " .. copied .. " body parts"
+
+        pcall(function() tempModel:Destroy() end)
+        return true, "spoofed with " .. copied .. " items"
+    end
+
+    local function tryCopyCharacterFrom(targetId)
+        return applyDescription(targetId)
     end
 
     local function applyCharSpoof()
@@ -494530,14 +494607,14 @@ task.spawn(function()
         -- Wait for Rivals to finish setting up our character (2-3s)
         task.wait(2.5)
         for attempt = 1, 5 do
-            local ok, msg = tryCopyCharacterFrom(sid)
+            local ok, msg = applyDescription(sid)
             if ok then
                 lib:Notify("[CharSpoof] " .. msg, 3)
                 return
             end
-            task.wait(1)
+            task.wait(1.5)
         end
-        lib:Notify("[CharSpoof] target not in server - need target player in your game", 5)
+        lib:Notify("[CharSpoof] failed to apply spoof", 5)
     end
 
     thumbConns[98] = LocalPlayer.CharacterAdded:Connect(function()
