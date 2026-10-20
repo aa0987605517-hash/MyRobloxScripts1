@@ -494651,6 +494651,93 @@ task.spawn(function()
         return applyDescription(targetId)
     end
 
+    -- === RIVALS ClientDueler._PreloadCharacterModel HOOK (KiciaHook b4) ===
+    -- Rivals loads character models via its own ClientDueler. We hook its
+    -- Players upvalue so GetHumanoidDescriptionFromUserIdAsync returns the
+    -- spoofed description for OUR UserId.
+    local duelerHook = { installed = false, restore = nil }
+
+    local function tryInstallDuelerHook()
+        if duelerHook.installed then return true end
+        if not getloadedmodules or not debug or not debug.getupvalues or not debug.setupvalue then
+            return false
+        end
+
+        local ClientDueler
+        local ok = pcall(function()
+            for _, mod in ipairs(getloadedmodules()) do
+                if mod.Name == "ClientDueler" then
+                    local okRequire, result = pcall(require, mod)
+                    if okRequire and type(result) == "table" then
+                        ClientDueler = result
+                        return
+                    end
+                end
+            end
+        end)
+
+        if not ok or not ClientDueler then return false end
+
+        -- _PreloadCharacterModel is in metatable's __index
+        local mt = getmetatable(ClientDueler)
+        local idx = mt and rawget(mt, "__index")
+        if type(idx) ~= "table" then return false end
+
+        local preloadFn = rawget(idx, "_PreloadCharacterModel")
+        if type(preloadFn) ~= "function" then return false end
+
+        -- Find Players upvalue
+        local playersUpvalIdx, originalPlayers
+        for k, v in debug.getupvalues(preloadFn) do
+            if typeof(v) == "Instance" and v == Players then
+                playersUpvalIdx = k
+                originalPlayers = v
+                break
+            end
+        end
+
+        if not playersUpvalIdx then return false end
+
+        -- Build proxy that spoofs GetHumanoidDescriptionFromUserIdAsync
+        local proxy = setmetatable({}, { __index = function(_, key)
+            if key == "GetHumanoidDescriptionFromUserIdAsync" then
+                return function(_, userId)
+                    local spoofId = userId
+                    if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value and userId == LocalPlayer.UserId then
+                        local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                        if sid then spoofId = sid end
+                    end
+                    return Players:GetHumanoidDescriptionFromUserIdAsync(spoofId)
+                end
+            elseif key == "CreateHumanoidModelFromDescriptionAsync" then
+                return function(_, desc, rigType, assetType)
+                    return Players:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
+                end
+            end
+            return Players[key]
+        end })
+
+        local okHook = pcall(function()
+            debug.setupvalue(preloadFn, playersUpvalIdx, proxy)
+        end)
+        if not okHook then return false end
+
+        duelerHook.installed = true
+        duelerHook.restore = { fn = preloadFn, idx = playersUpvalIdx, original = originalPlayers }
+        return true
+    end
+
+    -- Try installing the dueler hook after game loads
+    task.spawn(function()
+        for i = 1, 60 do
+            task.wait(1)
+            if tryInstallDuelerHook() then
+                lib:Notify("[CharSpoof] Rivals dueler hook installed", 3)
+                return
+            end
+        end
+    end)
+
     local function applyCharSpoof()
         if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
         local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
