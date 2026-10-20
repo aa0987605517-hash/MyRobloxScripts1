@@ -494449,7 +494449,20 @@ task.spawn(function()
         end
     end)
 
-    -- === CHARACTER MODEL SPOOF (copies target player's character meshes) ===
+    -- === CHARACTER MODEL SPOOF (copies target player's BODY meshes only) ===
+    local BODY_PARTS = {
+        -- R6
+        Head = true, Torso = true,
+        ["Left Arm"] = true, ["Right Arm"] = true,
+        ["Left Leg"] = true, ["Right Leg"] = true,
+        -- R15
+        UpperTorso = true, LowerTorso = true,
+        LeftUpperArm = true, LeftLowerArm = true, LeftHand = true,
+        RightUpperArm = true, RightLowerArm = true, RightHand = true,
+        LeftUpperLeg = true, LeftLowerLeg = true, LeftFoot = true,
+        RightUpperLeg = true, RightLowerLeg = true, RightFoot = true,
+    }
+
     local function tryCopyCharacterFrom(targetId)
         local myChar = LocalPlayer.Character
         if not myChar then return false, "no character" end
@@ -494466,50 +494479,47 @@ task.spawn(function()
         local targetChar = target.Character
         if not targetChar then return false, "target has no character" end
 
-        -- Wait briefly for target to fully load
         for i = 1, 20 do
             if targetChar:FindFirstChildOfClass("Humanoid") then break end
             task.wait(0.1)
         end
 
         local copied = 0
-        for _, part in ipairs(targetChar:GetDescendants()) do
-            pcall(function()
-                if part:IsA("MeshPart") then
-                    local myPart = myChar:FindFirstChild(part.Name, true)
-                    if myPart and myPart:IsA("MeshPart") then
-                        myPart.MeshId = part.MeshId
-                        myPart.TextureID = part.TextureID
-                        myPart.Color = part.Color
-                        copied = copied + 1
-                    end
-                elseif part:IsA("SpecialMesh") then
-                    local myParent = myChar:FindFirstChild(part.Parent.Name, true)
-                    if myParent then
-                        local myMesh = myParent:FindFirstChildOfClass("SpecialMesh")
-                        if myMesh then
-                            myMesh.MeshId = part.MeshId
-                            myMesh.TextureId = part.TextureId
+        -- Only iterate direct children of character (body parts), not weapons/accessories
+        for _, part in ipairs(targetChar:GetChildren()) do
+            if BODY_PARTS[part.Name] then
+                pcall(function()
+                    local myPart = myChar:FindFirstChild(part.Name)
+                    if myPart then
+                        if part:IsA("MeshPart") and myPart:IsA("MeshPart") then
+                            myPart.MeshId = part.MeshId
+                            myPart.TextureID = part.TextureID
+                            myPart.Color = part.Color
                             copied = copied + 1
+                        elseif part:IsA("BasePart") and myPart:IsA("BasePart") then
+                            myPart.Color = part.Color
+                            -- Only replace SpecialMesh of the body part itself (e.g. Head)
+                            local tgtMesh = part:FindFirstChildOfClass("SpecialMesh")
+                            local myMesh = myPart:FindFirstChildOfClass("SpecialMesh")
+                            if tgtMesh and myMesh then
+                                myMesh.MeshId = tgtMesh.MeshId
+                                myMesh.TextureId = tgtMesh.TextureId
+                                copied = copied + 1
+                            end
+                            -- Face decal on head
+                            if part.Name == "Head" then
+                                local tgtDecal = part:FindFirstChild("face")
+                                local myDecal = myPart:FindFirstChild("face")
+                                if tgtDecal and myDecal then
+                                    myDecal.Texture = tgtDecal.Texture
+                                end
+                            end
                         end
                     end
-                elseif part:IsA("Decal") or part:IsA("Texture") then
-                    local myParent = myChar:FindFirstChild(part.Parent.Name, true)
-                    if myParent then
-                        local existing = myParent:FindFirstChild(part.Name)
-                        if existing and (existing:IsA("Decal") or existing:IsA("Texture")) then
-                            existing.Texture = part.Texture
-                            copied = copied + 1
-                        else
-                            local new = part:Clone()
-                            new.Parent = myParent
-                            copied = copied + 1
-                        end
-                    end
-                end
-            end)
+                end)
+            end
         end
-        return true, "copied " .. copied .. " parts"
+        return true, "copied " .. copied .. " body parts"
     end
 
     local function applyCharSpoof()
