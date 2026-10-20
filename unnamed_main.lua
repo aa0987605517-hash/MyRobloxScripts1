@@ -494449,6 +494449,95 @@ task.spawn(function()
         end
     end)
 
+    -- === CHARACTER MODEL SPOOF (copies target player's character meshes) ===
+    local function tryCopyCharacterFrom(targetId)
+        local myChar = LocalPlayer.Character
+        if not myChar then return false, "no character" end
+
+        local target
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.UserId == targetId then
+                target = p
+                break
+            end
+        end
+        if not target then return false, "target not in server" end
+
+        local targetChar = target.Character
+        if not targetChar then return false, "target has no character" end
+
+        -- Wait briefly for target to fully load
+        for i = 1, 20 do
+            if targetChar:FindFirstChildOfClass("Humanoid") then break end
+            task.wait(0.1)
+        end
+
+        local copied = 0
+        for _, part in ipairs(targetChar:GetDescendants()) do
+            pcall(function()
+                if part:IsA("MeshPart") then
+                    local myPart = myChar:FindFirstChild(part.Name, true)
+                    if myPart and myPart:IsA("MeshPart") then
+                        myPart.MeshId = part.MeshId
+                        myPart.TextureID = part.TextureID
+                        myPart.Color = part.Color
+                        copied = copied + 1
+                    end
+                elseif part:IsA("SpecialMesh") then
+                    local myParent = myChar:FindFirstChild(part.Parent.Name, true)
+                    if myParent then
+                        local myMesh = myParent:FindFirstChildOfClass("SpecialMesh")
+                        if myMesh then
+                            myMesh.MeshId = part.MeshId
+                            myMesh.TextureId = part.TextureId
+                            copied = copied + 1
+                        end
+                    end
+                elseif part:IsA("Decal") or part:IsA("Texture") then
+                    local myParent = myChar:FindFirstChild(part.Parent.Name, true)
+                    if myParent then
+                        local existing = myParent:FindFirstChild(part.Name)
+                        if existing and (existing:IsA("Decal") or existing:IsA("Texture")) then
+                            existing.Texture = part.Texture
+                            copied = copied + 1
+                        else
+                            local new = part:Clone()
+                            new.Parent = myParent
+                            copied = copied + 1
+                        end
+                    end
+                end
+            end)
+        end
+        return true, "copied " .. copied .. " parts"
+    end
+
+    local function applyCharSpoof()
+        if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
+        local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+        if not sid then return end
+
+        -- Wait for Rivals to finish setting up our character (2-3s)
+        task.wait(2.5)
+        for attempt = 1, 5 do
+            local ok, msg = tryCopyCharacterFrom(sid)
+            if ok then
+                lib:Notify("[CharSpoof] " .. msg, 3)
+                return
+            end
+            task.wait(1)
+        end
+        lib:Notify("[CharSpoof] target not in server - need target player in your game", 5)
+    end
+
+    thumbConns[98] = LocalPlayer.CharacterAdded:Connect(function()
+        task.spawn(applyCharSpoof)
+    end)
+
+    if LocalPlayer.Character then
+        task.spawn(applyCharSpoof)
+    end
+
     -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
     pcall(function()
         local mt = getrawmetatable(game)
