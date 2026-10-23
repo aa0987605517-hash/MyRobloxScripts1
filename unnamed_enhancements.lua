@@ -494400,23 +494400,25 @@ task.spawn(function()
             task.defer(function() replaceThumbIn(obj) end)
         end)
 
+        -- Safety-net rescan for images whose Image property changes after creation.
+        -- DescendantAdded above already covers newly created ones, so this can be
+        -- infrequent: a full PlayerGui walk is expensive in Rivals.
         local scanClock = 0
         thumbConns[2] = RunService.Heartbeat:Connect(function(dt)
             scanClock = scanClock + dt
-            if scanClock < 0.1 then return end
+            if scanClock < 1 then return end
             scanClock = 0
             pcall(function()
                 local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
                 if not sid then return end
                 local s = tostring(sid)
                 for _, obj in ipairs(playerGui:GetDescendants()) do
-                    pcall(function()
-                        if (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) and type(obj.Image) == "string" then
-                            if string.find(obj.Image, myIdStr, 1, true) then
-                                obj.Image = string.gsub(obj.Image, myIdStr, s)
-                            end
+                    if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                        local img = obj.Image
+                        if type(img) == "string" and string.find(img, myIdStr, 1, true) then
+                            obj.Image = string.gsub(img, myIdStr, s)
                         end
-                    end)
+                    end
                 end
             end)
         end)
@@ -494865,17 +494867,29 @@ task.spawn(function()
         preloadFn = nil,
     }
 
-    local function findModuleByName(name)
-        if not getloadedmodules then return nil end
-        for _, mod in ipairs(getloadedmodules()) do
-            if mod.Name == name then
-                local ok, result = pcall(require, mod)
-                if ok and type(result) == "table" then
-                    return result
+    -- Single pass over getloadedmodules() collecting every name we need.
+    -- getloadedmodules() is huge in Rivals, so this must never run on a timer.
+    local function findModules(names)
+        local found = {}
+        if not getloadedmodules then return found end
+        local wanted = {}
+        for _, n in ipairs(names) do wanted[n] = true end
+        local remaining = #names
+        local ok = pcall(function()
+            for _, mod in ipairs(getloadedmodules()) do
+                local n = mod.Name
+                if wanted[n] and not found[n] then
+                    local okReq, result = pcall(require, mod)
+                    if okReq and type(result) == "table" then
+                        found[n] = result
+                        remaining = remaining - 1
+                        if remaining <= 0 then return end
+                    end
                 end
             end
-        end
-        return nil
+        end)
+        if not ok then return found end
+        return found
     end
 
     local function getPreloadFn(ClientDueler)
@@ -494936,10 +494950,11 @@ task.spawn(function()
         if duelerSpoof.installed then return true end
         if not debug or not debug.getupvalues or not debug.setupvalue then return false end
 
-        local ClientDueler = findModuleByName("ClientDueler")
+        local mods = findModules({ "ClientDueler", "DuelController" })
+        local ClientDueler = mods.ClientDueler
         if not ClientDueler then return false end
 
-        local DuelController = findModuleByName("DuelController")
+        local DuelController = mods.DuelController
         -- DuelController optional for refresh; hook still works without
 
         local preloadFn = getPreloadFn(ClientDueler)
@@ -494997,35 +495012,46 @@ task.spawn(function()
         return true
     end
 
-    -- Try installing the dueler hook after game loads
-    task.spawn(function()
-        for i = 1, 60 do
-            task.wait(1)
-            if tryInstallDuelerHook() then
-                lib:Notify("[CharSpoof] Rivals dueler hook installed", 3)
-                return
+    -- Install lazily: scanning every loaded module is far too expensive to do
+    -- on a timer, so only attempt it when Avatar Spoof is actually switched on.
+    local duelerInstallRunning = false
+    local function ensureDuelerHook()
+        if duelerSpoof.installed or duelerInstallRunning then return end
+        duelerInstallRunning = true
+        task.spawn(function()
+            for i = 1, 5 do
+                if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then break end
+                local ok = false
+                pcall(function() ok = tryInstallDuelerHook() end)
+                if ok then
+                    lib:Notify("[CharSpoof] Rivals dueler hook installed", 3)
+                    break
+                end
+                task.wait(4)
             end
-        end
-    end)
-
-    -- When toggle flips on, also force a dueler model rebuild so the spoof shows up right away
-    if Toggles.IS_AvatarSpoof then
-        local origCb = Toggles.IS_AvatarSpoof.Callback
-        Toggles.IS_AvatarSpoof:OnChanged(function(val)
-            if val and duelerSpoof.installed then
-                task.spawn(function()
-                    task.wait(0.3)
-                    refreshLocalPlayerDueler()
-                end)
-            end
+            duelerInstallRunning = false
         end)
+    end
+
+    -- When toggle flips on, install the hook and force a dueler model rebuild
+    if Toggles.IS_AvatarSpoof then
+        Toggles.IS_AvatarSpoof:OnChanged(function(val)
+            if not val then return end
+            ensureDuelerHook()
+            task.spawn(function()
+                task.wait(0.3)
+                if duelerSpoof.installed then refreshLocalPlayerDueler() end
+            end)
+        end)
+        if Toggles.IS_AvatarSpoof.Value then ensureDuelerHook() end
     end
     if Options.IS_AvatarUserId and Options.IS_AvatarUserId.OnChanged then
         Options.IS_AvatarUserId:OnChanged(function()
-            if duelerSpoof.installed and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+            if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                ensureDuelerHook()
                 task.spawn(function()
                     task.wait(0.3)
-                    refreshLocalPlayerDueler()
+                    if duelerSpoof.installed then refreshLocalPlayerDueler() end
                 end)
             end
         end)
