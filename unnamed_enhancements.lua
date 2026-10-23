@@ -494432,6 +494432,11 @@ task.spawn(function()
         thumbConns = {}
     end
 
+    -- Declared here so the toggle handler below can see it; the methods are
+    -- filled in further down. A `local function` defined later would not be
+    -- visible to this handler, which resolves names at compile time.
+    local AvatarSpoof = {}
+
     if Toggles.IS_AvatarSpoof then
         Toggles.IS_AvatarSpoof:OnChanged(function(val)
             if val then
@@ -494442,7 +494447,6 @@ task.spawn(function()
                         lib:Notify("[CharSpoof] no UserId set", 4)
                         return
                     end
-                    -- Wait briefly for character
                     local char = LocalPlayer.Character
                     for i = 1, 30 do
                         if char then break end
@@ -494453,22 +494457,17 @@ task.spawn(function()
                         lib:Notify("[CharSpoof] no character", 4)
                         return
                     end
-                    local ok, msg = applyAvatarSpoofToCharacter(char, sid)
+                    local ok, msg = AvatarSpoof.ApplyToCharacter(char, sid)
                     if ok then
-                        lib:Notify("[CharSpoof] " .. msg, 3)
+                        lib:Notify("[CharSpoof] " .. tostring(msg), 3)
                     else
                         lib:Notify("[CharSpoof] FAIL: " .. tostring(msg), 5)
                     end
-                    startCharacterMonitor()
                 end)
             else
                 stopThumbSpoof()
                 task.spawn(function()
-                    if AvatarSpoofState.childConn then
-                        pcall(function() AvatarSpoofState.childConn:Disconnect() end)
-                        AvatarSpoofState.childConn = nil
-                    end
-                    local ok, err = pcall(restoreAvatarSpoof)
+                    local ok, err = pcall(AvatarSpoof.Restore)
                     if ok then
                         lib:Notify("[CharSpoof] restored", 2)
                     else
@@ -494488,127 +494487,11 @@ task.spawn(function()
         end
     end)
 
-    -- === CHARACTER MODEL SPOOF (persistent monitor, auto-reapply) ===
-    local AvatarSpoofState = {
-        spoofedInstances = {}, -- items we added to character
-        stashedInstances = {}, -- original items we removed (for restore)
-        originalHead = nil,    -- original head mesh/texture
-        originalColors = {},   -- original body part colors
-        activeChar = nil,      -- character currently being monitored
-        childConn = nil,       -- ChildAdded connection
-        monitorThread = nil,   -- persistent reapply loop
-        cachedDescription = nil,
-        cachedDescriptionId = nil,
-        currentlyApplying = false,
-    }
+    -- === AVATAR SPOOF (port of KiciaHook standalone AvatarSpoof) ===
+    AvatarSpoof._spoofedInstances = {}
+    AvatarSpoof._stashed = {}
 
-    -- === THREAD IDENTITY ELEVATION (KiciaHook b3) ===
-    -- GetHumanoidDescriptionFromUserId / CreateHumanoidModelFromDescriptionAsync are
-    -- server-context APIs. Executor threads run at an identity that Roblox rejects for
-    -- these, so the call must be made with an elevated identity and restored after.
-    local setIdentity = setthreadidentity or set_thread_identity or setidentity
-    local getIdentity = getthreadidentity or get_thread_identity or getidentity
-
-    -- cloneref'd instances are not == to the raw instance (KiciaHook b2)
-    local function sameInstance(a, b)
-        if compareinstances then
-            local ok, res = pcall(compareinstances, a, b)
-            if ok then return res end
-        end
-        return a == b
-    end
-
-    local function elevatedCall(fn, ...)
-        -- Varargs do not close over into nested functions, so capture them here.
-        local args = table.pack(...)
-        local old
-        if getIdentity and setIdentity then
-            pcall(function() old = getIdentity() end)
-        end
-        local function attempt(identity)
-            if identity and setIdentity then
-                local okSet = pcall(setIdentity, identity)
-                if not okSet then return false, "setthreadidentity failed" end
-            end
-            local packed = table.pack(pcall(fn, table.unpack(args, 1, args.n)))
-            if packed[1] then
-                return true, table.unpack(packed, 2, packed.n)
-            end
-            return false, packed[2]
-        end
-
-        -- Try identity 8 (highest), then 2, then whatever we started with
-        local ok, res = attempt(setIdentity and 8 or nil)
-        if not ok and setIdentity then
-            ok, res = attempt(2)
-        end
-        if not ok and setIdentity then
-            ok, res = attempt(old)
-        end
-
-        if old and setIdentity then
-            pcall(setIdentity, old)
-        end
-        return ok, res
-    end
-
-    -- Raw (non-cloneref) Players service: some avatar APIs reject cloneref'd instances
-    local RawPlayers = game:GetService("Players")
-
-    local function fetchDescription(userId)
-        local attempts = {
-            { "GetHumanoidDescriptionFromUserIdAsync (raw)", function()
-                return RawPlayers:GetHumanoidDescriptionFromUserIdAsync(userId)
-            end },
-            { "GetHumanoidDescriptionFromUserId (raw)", function()
-                return RawPlayers:GetHumanoidDescriptionFromUserId(userId)
-            end },
-            { "GetHumanoidDescriptionFromUserIdAsync (cloneref)", function()
-                return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
-            end },
-            { "GetHumanoidDescriptionFromUserId (cloneref)", function()
-                return Players:GetHumanoidDescriptionFromUserId(userId)
-            end },
-        }
-        local lastErr = "no attempt ran"
-        for _, entry in ipairs(attempts) do
-            local ok, res = elevatedCall(entry[2])
-            if ok and typeof(res) == "Instance" then
-                warn("[CharSpoof] description OK via " .. entry[1])
-                return res
-            end
-            lastErr = entry[1] .. " -> " .. tostring(res)
-            warn("[CharSpoof] " .. lastErr)
-        end
-        return nil, lastErr
-    end
-
-    local function buildModel(description, rigType)
-        local attempts = {
-            { "CreateHumanoidModelFromDescriptionAsync (raw)", function()
-                return RawPlayers:CreateHumanoidModelFromDescriptionAsync(description, rigType)
-            end },
-            { "CreateHumanoidModelFromDescriptionAsync (cloneref)", function()
-                return Players:CreateHumanoidModelFromDescriptionAsync(description, rigType)
-            end },
-        }
-        local lastErr = "no attempt ran"
-        for _, entry in ipairs(attempts) do
-            local ok, res = elevatedCall(entry[2])
-            if ok and typeof(res) == "Instance" then
-                warn("[CharSpoof] model OK via " .. entry[1])
-                return res
-            end
-            lastErr = entry[1] .. " -> " .. tostring(res)
-            warn("[CharSpoof] " .. lastErr)
-        end
-        return nil, lastErr
-    end
-
-    local function applyAvatarSpoofToCharacter(character, userId)
-        if AvatarSpoofState.currentlyApplying then return false, "already applying" end
-        AvatarSpoofState.currentlyApplying = true
-
+    function AvatarSpoof.ApplyToCharacter(character, userId)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid then
             local start = os.clock()
@@ -494617,71 +494500,34 @@ task.spawn(function()
                 task.wait(0.1)
             until humanoid or (os.clock() - start > 10)
         end
-        if not humanoid then
-            AvatarSpoofState.currentlyApplying = false
-            return false, "no humanoid"
+        if not humanoid then return false, "no humanoid" end
+
+        local ok, model = pcall(function()
+            return Players:CreateHumanoidModelFromDescriptionAsync(
+                Players:GetHumanoidDescriptionFromUserId(userId),
+                humanoid.RigType
+            )
+        end)
+        if not ok or not model then
+            return false, tostring(model)
         end
 
-        -- Use cached description to avoid re-fetching from Roblox servers each time
-        local description = AvatarSpoofState.cachedDescription
-        if not description or AvatarSpoofState.cachedDescriptionId ~= userId then
-            local desc, err = fetchDescription(userId)
-            if not desc then
-                AvatarSpoofState.currentlyApplying = false
-                return false, "GetDescription: " .. tostring(err)
-            end
-            description = desc
-            AvatarSpoofState.cachedDescription = desc
-            AvatarSpoofState.cachedDescriptionId = userId
-        end
+        local spoofed = {}
+        local stashed = {}
 
-        local model, modelErr = buildModel(description, humanoid.RigType)
-        if not model then
-            -- Fallback: apply the description straight onto our Humanoid.
-            local okApply = elevatedCall(function()
-                humanoid:ApplyDescription(description)
-                return true
-            end)
-            AvatarSpoofState.currentlyApplying = false
-            if okApply then
-                return true, "applied via ApplyDescription fallback"
-            end
-            return false, "CreateModel: " .. tostring(modelErr)
-        end
-
-        -- Stash original accessories/clothing (keep for restore, remove from character)
         for _, child in ipairs(character:GetChildren()) do
             if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
                 child.Parent = nil
-                table.insert(AvatarSpoofState.stashedInstances, child)
-            end
-        end
-
-        -- Save original head state
-        local dstHead = character:FindFirstChild("Head")
-        if dstHead and dstHead:IsA("BasePart") and not AvatarSpoofState.originalHead then
-            local saved = { Transparency = dstHead.Transparency }
-            if dstHead:IsA("MeshPart") then
-                saved.MeshId = dstHead.MeshId
-                saved.TextureID = dstHead.TextureID
-            end
-            AvatarSpoofState.originalHead = saved
-        end
-
-        -- Save original body colors
-        for _, part in ipairs(character:GetChildren()) do
-            if part:IsA("BasePart") and not AvatarSpoofState.originalColors[part] then
-                AvatarSpoofState.originalColors[part] = part.Color
+                table.insert(stashed, child)
             end
         end
 
         local copied = 0
 
-        -- Transfer accessories/shirts/pants/graphics from temp model
         for _, child in ipairs(model:GetChildren()) do
             if child:IsA("Accessory") then
                 child.Parent = nil
-                AvatarSpoofState.spoofedInstances[child] = true
+                spoofed[child] = true
 
                 local handle = child:FindFirstChild("Handle")
                 if handle and handle:IsA("BasePart") then
@@ -494723,7 +494569,7 @@ task.spawn(function()
                 child.Parent = character
                 copied = copied + 1
             elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                AvatarSpoofState.spoofedInstances[child] = true
+                spoofed[child] = true
                 child.Parent = character
                 copied = copied + 1
             elseif child:IsA("BasePart") then
@@ -494734,8 +494580,8 @@ task.spawn(function()
             end
         end
 
-        -- Head mesh/texture
         local srcHead = model:FindFirstChild("Head")
+        local dstHead = character:FindFirstChild("Head")
         if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
             dstHead.Transparency = srcHead.Transparency
             if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
@@ -494744,344 +494590,51 @@ task.spawn(function()
             end
         end
 
-        pcall(function() model:Destroy() end)
-        AvatarSpoofState.currentlyApplying = false
+        model:Destroy()
+
+        local key = character:GetFullName()
+        AvatarSpoof._spoofedInstances[key] = spoofed
+        AvatarSpoof._stashed[key] = stashed
         return true, "spoofed with " .. copied .. " items"
     end
 
-    -- Monitor: watch character for Rivals re-adding accessories, auto-stash them
-    local function startCharacterMonitor()
-        -- Clean up old monitor
-        if AvatarSpoofState.childConn then
-            pcall(function() AvatarSpoofState.childConn:Disconnect() end)
-            AvatarSpoofState.childConn = nil
-        end
-        if AvatarSpoofState.monitorThread then
-            pcall(function() task.cancel(AvatarSpoofState.monitorThread) end)
-            AvatarSpoofState.monitorThread = nil
-        end
-
+    function AvatarSpoof.Restore()
         local character = LocalPlayer.Character
-        if not character then return end
-        AvatarSpoofState.activeChar = character
 
-        -- Hook ChildAdded: any new Accessory/Shirt/Pants that we didn't add → stash it
-        AvatarSpoofState.childConn = character.ChildAdded:Connect(function(child)
-            task.defer(function()
-                if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
-                if child.Parent ~= character then return end
-                if AvatarSpoofState.spoofedInstances[child] then return end
-                if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                    pcall(function()
-                        child.Parent = nil
-                        table.insert(AvatarSpoofState.stashedInstances, child)
-                    end)
-                end
-            end)
-        end)
-
-        -- Persistent reapply loop (every 2.5s, if toggle on and nothing changed, no-op)
-        AvatarSpoofState.monitorThread = task.spawn(function()
-            while Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value do
-                task.wait(2.5)
-                if AvatarSpoofState.activeChar ~= LocalPlayer.Character then
-                    AvatarSpoofState.activeChar = LocalPlayer.Character
-                    if AvatarSpoofState.activeChar then
-                        -- Character changed - reapply
-                        local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                        if sid then
-                            pcall(applyAvatarSpoofToCharacter, AvatarSpoofState.activeChar, sid)
-                        end
-                    end
-                end
-            end
-            -- Toggle turned off - cleanup
-            if AvatarSpoofState.childConn then
-                pcall(function() AvatarSpoofState.childConn:Disconnect() end)
-                AvatarSpoofState.childConn = nil
-            end
-        end)
-    end
-
-    local function restoreAvatarSpoof()
-        local character = LocalPlayer.Character
-        if not character then
-            -- Just destroy stashed items if no character
-            for _, item in ipairs(AvatarSpoofState.stashedInstances) do
+        for _, spoofed in pairs(AvatarSpoof._spoofedInstances) do
+            for item in pairs(spoofed) do
                 pcall(function() item:Destroy() end)
             end
-            AvatarSpoofState.stashedInstances = {}
-            AvatarSpoofState.spoofedInstances = {}
-            return
         end
+        AvatarSpoof._spoofedInstances = {}
 
-        -- Remove our spoofed items
-        for item in pairs(AvatarSpoofState.spoofedInstances) do
-            pcall(function() item:Destroy() end)
-        end
-        AvatarSpoofState.spoofedInstances = {}
-
-        -- Restore stashed items
-        for _, item in ipairs(AvatarSpoofState.stashedInstances) do
-            pcall(function() item.Parent = character end)
-        end
-        AvatarSpoofState.stashedInstances = {}
-
-        -- Restore head
-        local head = character:FindFirstChild("Head")
-        if head and head:IsA("BasePart") and AvatarSpoofState.originalHead then
-            local saved = AvatarSpoofState.originalHead
-            head.Transparency = saved.Transparency or 0
-            if head:IsA("MeshPart") and saved.MeshId then
-                head.MeshId = saved.MeshId
-                head.TextureID = saved.TextureID
-            end
-        end
-        AvatarSpoofState.originalHead = nil
-
-        -- Restore body colors
-        for part, color in pairs(AvatarSpoofState.originalColors) do
-            if part and part.Parent then
-                pcall(function() part.Color = color end)
-            end
-        end
-        AvatarSpoofState.originalColors = {}
-    end
-
-    local function applyDescription(targetUserId)
-        local char = LocalPlayer.Character
-        if not char then return false, "no character" end
-        return applyAvatarSpoofToCharacter(char, targetUserId)
-    end
-
-    local function tryCopyCharacterFrom(targetId)
-        return applyDescription(targetId)
-    end
-
-    -- === RIVALS DuelerCloneSpoof (KiciaHook b4 full port) ===
-    local duelerSpoof = {
-        installed = false,
-        restore = nil,
-        ClientDueler = nil,
-        DuelController = nil,
-        preloadFn = nil,
-    }
-
-    -- Single pass over getloadedmodules() collecting every name we need.
-    -- getloadedmodules() is huge in Rivals, so this must never run on a timer.
-    local function findModules(names)
-        local found = {}
-        if not getloadedmodules then return found end
-        local wanted = {}
-        for _, n in ipairs(names) do wanted[n] = true end
-        local remaining = #names
-        local ok = pcall(function()
-            for _, mod in ipairs(getloadedmodules()) do
-                local n = mod.Name
-                if wanted[n] and not found[n] then
-                    local okReq, result = pcall(require, mod)
-                    if okReq and type(result) == "table" then
-                        found[n] = result
-                        remaining = remaining - 1
-                        if remaining <= 0 then return end
+        for _, stashed in pairs(AvatarSpoof._stashed) do
+            for _, item in ipairs(stashed) do
+                pcall(function()
+                    if character then
+                        item.Parent = character
+                    else
+                        item:Destroy()
                     end
-                end
-            end
-        end)
-        if not ok then return found end
-        return found
-    end
-
-    local function getPreloadFn(ClientDueler)
-        local mt = getmetatable(ClientDueler)
-        if not mt then return nil end
-        local idx = rawget(mt, "__index")
-        if type(idx) ~= "table" then return nil end
-        local fn = rawget(idx, "_PreloadCharacterModel")
-        if type(fn) == "function" then return fn end
-        return nil
-    end
-
-    local function getSpoofId()
-        if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return nil end
-        return tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-    end
-
-    -- Rebuild preloaded character model for LocalPlayer (b4._RebuildPreloadedModel)
-    local function rebuildPreloadedModel(dueler)
-        pcall(function()
-            local preloaded = rawget(dueler, "_preloaded_character_model")
-            if preloaded == nil then return end
-            if rawget(dueler, "_destroyed") then return end
-            local clientDuel = rawget(dueler, "ClientDuel")
-            if clientDuel == nil then return end
-            dueler._preloaded_character_model = nil
-            dueler._is_preloading_character_model = false
-            preloaded:Destroy()
-            task.spawn(function()
-                pcall(duelerSpoof.preloadFn, dueler)
-            end)
-        end)
-    end
-
-    -- Find current dueler object for LocalPlayer, rebuild its model
-    local function refreshLocalPlayerDueler()
-        if not duelerSpoof.DuelController then return end
-        local ok, objects = pcall(function()
-            return rawget(duelerSpoof.DuelController, "Objects")
-        end)
-        if not ok or type(objects) ~= "table" then return end
-
-        for _, duel in pairs(objects) do
-            pcall(function()
-                local duelers = rawget(duel, "Duelers")
-                if type(duelers) ~= "table" then return end
-                for _, dueler in pairs(duelers) do
-                    local player = rawget(dueler, "Player")
-                    if player == LocalPlayer then
-                        rebuildPreloadedModel(dueler)
-                    end
-                end
-            end)
-        end
-    end
-
-    local function tryInstallDuelerHook()
-        if duelerSpoof.installed then return true end
-        if not debug or not debug.getupvalues or not debug.setupvalue then return false end
-
-        local mods = findModules({ "ClientDueler", "DuelController" })
-        local ClientDueler = mods.ClientDueler
-        if not ClientDueler then return false end
-
-        local DuelController = mods.DuelController
-        -- DuelController optional for refresh; hook still works without
-
-        local preloadFn = getPreloadFn(ClientDueler)
-        if not preloadFn then return false end
-
-        -- Find Players upvalue
-        local playersUpvalIdx, originalPlayers
-        for k, v in debug.getupvalues(preloadFn) do
-            -- cloneref'd Players never compares == to the game's raw instance,
-            -- so use compareinstances when the executor provides it (KiciaHook b2).
-            if typeof(v) == "Instance" and sameInstance(v, Players) then
-                playersUpvalIdx = k
-                originalPlayers = v
-                break
+                end)
             end
         end
-        if not playersUpvalIdx then return false end
-
-        -- Build proxy with GetHumanoidDescriptionFromUserIdAsync hooked
-        local dummy = Color3.new()
-        local methods = {
-            GetHumanoidDescriptionFromUserIdAsync = function(_, userId)
-                local spoofId = getSpoofId()
-                if spoofId and userId == LocalPlayer.UserId then
-                    userId = spoofId
-                end
-                local ok, res = elevatedCall(function()
-                    return RawPlayers:GetHumanoidDescriptionFromUserIdAsync(userId)
-                end)
-                if ok then return res end
-                return RawPlayers:GetHumanoidDescriptionFromUserIdAsync(userId)
-            end,
-            CreateHumanoidModelFromDescriptionAsync = function(_, desc, rigType, assetType)
-                local ok, res = elevatedCall(function()
-                    return RawPlayers:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
-                end)
-                if ok then return res end
-                return RawPlayers:CreateHumanoidModelFromDescriptionAsync(desc, rigType, assetType)
-            end,
-        }
-        local proxy = setmetatable(dummy, { __index = function(_, key)
-            return methods[key] or Players[key]
-        end })
-
-        local okHook = pcall(function()
-            debug.setupvalue(preloadFn, playersUpvalIdx, proxy)
-        end)
-        if not okHook then return false end
-
-        duelerSpoof.installed = true
-        duelerSpoof.ClientDueler = ClientDueler
-        duelerSpoof.DuelController = DuelController
-        duelerSpoof.preloadFn = preloadFn
-        duelerSpoof.restore = { fn = preloadFn, idx = playersUpvalIdx, original = originalPlayers }
-        return true
+        AvatarSpoof._stashed = {}
     end
 
-    -- Install lazily: scanning every loaded module is far too expensive to do
-    -- on a timer, so only attempt it when Avatar Spoof is actually switched on.
-    local duelerInstallRunning = false
-    local function ensureDuelerHook()
-        if duelerSpoof.installed or duelerInstallRunning then return end
-        duelerInstallRunning = true
+    -- Reapply after respawn, matching the standalone's 1s settle delay
+    thumbConns[98] = LocalPlayer.CharacterAdded:Connect(function(char)
+        if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
         task.spawn(function()
-            for i = 1, 5 do
-                if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then break end
-                local ok = false
-                pcall(function() ok = tryInstallDuelerHook() end)
-                if ok then
-                    lib:Notify("[CharSpoof] Rivals dueler hook installed", 3)
-                    break
-                end
-                task.wait(4)
-            end
-            duelerInstallRunning = false
-        end)
-    end
-
-    -- When toggle flips on, install the hook and force a dueler model rebuild
-    if Toggles.IS_AvatarSpoof then
-        Toggles.IS_AvatarSpoof:OnChanged(function(val)
-            if not val then return end
-            ensureDuelerHook()
-            task.spawn(function()
-                task.wait(0.3)
-                if duelerSpoof.installed then refreshLocalPlayerDueler() end
-            end)
-        end)
-        if Toggles.IS_AvatarSpoof.Value then ensureDuelerHook() end
-    end
-    if Options.IS_AvatarUserId and Options.IS_AvatarUserId.OnChanged then
-        Options.IS_AvatarUserId:OnChanged(function()
-            if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
-                ensureDuelerHook()
-                task.spawn(function()
-                    task.wait(0.3)
-                    if duelerSpoof.installed then refreshLocalPlayerDueler() end
-                end)
+            task.wait(1)
+            local userId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+            if not userId then return end
+            local okApply, msg = AvatarSpoof.ApplyToCharacter(char, userId)
+            if not okApply then
+                warn("[AvatarSpoof] " .. tostring(msg))
             end
         end)
-    end
-
-    local function applyCharSpoof()
-        if not Toggles.IS_AvatarSpoof or not Toggles.IS_AvatarSpoof.Value then return end
-        local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-        if not sid then return end
-
-        -- Wait for Rivals to finish setting up our character (2-3s)
-        task.wait(2.5)
-        for attempt = 1, 5 do
-            local ok, msg = applyDescription(sid)
-            if ok then
-                lib:Notify("[CharSpoof] " .. msg, 3)
-                return
-            end
-            task.wait(1.5)
-        end
-        lib:Notify("[CharSpoof] failed to apply spoof", 5)
-    end
-
-    thumbConns[98] = LocalPlayer.CharacterAdded:Connect(function()
-        task.spawn(applyCharSpoof)
     end)
-
-    if LocalPlayer.Character then
-        task.spawn(applyCharSpoof)
-    end
 
     -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
     pcall(function()
