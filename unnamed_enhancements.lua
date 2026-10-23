@@ -494463,6 +494463,7 @@ task.spawn(function()
                     else
                         lib:Notify("[CharSpoof] FAIL: " .. tostring(msg), 5)
                     end
+                    AvatarSpoof.Watch(char)
                 end)
             else
                 stopThumbSpoof()
@@ -494490,8 +494491,11 @@ task.spawn(function()
     -- === AVATAR SPOOF (port of KiciaHook standalone AvatarSpoof) ===
     AvatarSpoof._spoofedInstances = {}
     AvatarSpoof._stashed = {}
+    AvatarSpoof._applying = false
+    AvatarSpoof._pending = false
+    AvatarSpoof._watchConn = nil
 
-    function AvatarSpoof.ApplyToCharacter(character, userId)
+    function AvatarSpoof._Apply(character, userId)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid then
             local start = os.clock()
@@ -494512,13 +494516,22 @@ task.spawn(function()
             return false, tostring(model)
         end
 
+        local key = character:GetFullName()
+        local prevSpoofed = AvatarSpoof._spoofedInstances[key]
         local spoofed = {}
-        local stashed = {}
+        -- Keep any earlier stash: on a re-apply the genuine originals were
+        -- already taken off the character the first time round.
+        local stashed = AvatarSpoof._stashed[key] or {}
 
         for _, child in ipairs(character:GetChildren()) do
             if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                child.Parent = nil
-                table.insert(stashed, child)
+                if prevSpoofed and prevSpoofed[child] then
+                    -- ours from a previous apply; drop it rather than stashing it
+                    child:Destroy()
+                else
+                    child.Parent = nil
+                    table.insert(stashed, child)
+                end
             end
         end
 
@@ -494592,14 +494605,62 @@ task.spawn(function()
 
         model:Destroy()
 
-        local key = character:GetFullName()
         AvatarSpoof._spoofedInstances[key] = spoofed
         AvatarSpoof._stashed[key] = stashed
         return true, "spoofed with " .. copied .. " items"
     end
 
+    -- Guarded entry point: the watcher below reacts to accessories appearing on
+    -- the character, and _Apply adds some itself, so re-entry must be blocked.
+    function AvatarSpoof.ApplyToCharacter(character, userId)
+        if AvatarSpoof._applying then return false, "already applying" end
+        AvatarSpoof._applying = true
+        local ran, a, b = pcall(AvatarSpoof._Apply, character, userId)
+        AvatarSpoof._applying = false
+        if not ran then return false, tostring(a) end
+        return a, b
+    end
+
+    -- Rivals puts the lobby outfit back on the character between rounds, which
+    -- wipes the spoof. Watch for that and re-apply. Event-driven, so idle cost
+    -- is zero; the debounce lets Rivals finish adding every item first.
+    function AvatarSpoof.Watch(character)
+        if AvatarSpoof._watchConn then
+            pcall(function() AvatarSpoof._watchConn:Disconnect() end)
+            AvatarSpoof._watchConn = nil
+        end
+        if not character then return end
+
+        AvatarSpoof._watchConn = character.ChildAdded:Connect(function(child)
+            if AvatarSpoof._applying or AvatarSpoof._pending then return end
+            if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+            if not (child:IsA("Accessory") or child:IsA("Shirt")
+                or child:IsA("Pants") or child:IsA("ShirtGraphic")) then return end
+
+            local set = AvatarSpoof._spoofedInstances[character:GetFullName()]
+            if set and set[child] then return end
+
+            AvatarSpoof._pending = true
+            task.spawn(function()
+                task.wait(0.5)
+                AvatarSpoof._pending = false
+                if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+                local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                local c = LocalPlayer.Character
+                if not uid or not c then return end
+                local okApply, msg = AvatarSpoof.ApplyToCharacter(c, uid)
+                if not okApply then warn("[AvatarSpoof] reapply: " .. tostring(msg)) end
+            end)
+        end)
+    end
+
     function AvatarSpoof.Restore()
         local character = LocalPlayer.Character
+
+        if AvatarSpoof._watchConn then
+            pcall(function() AvatarSpoof._watchConn:Disconnect() end)
+            AvatarSpoof._watchConn = nil
+        end
 
         for _, spoofed in pairs(AvatarSpoof._spoofedInstances) do
             for item in pairs(spoofed) do
@@ -494633,6 +494694,7 @@ task.spawn(function()
             if not okApply then
                 warn("[AvatarSpoof] " .. tostring(msg))
             end
+            AvatarSpoof.Watch(char)
         end)
     end)
 
