@@ -1,0 +1,12 @@
+local url = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/claude/game-scripts-modifications-3si52n/unnamed_main.lua?t=" .. tostring(os.time())
+local source = game:HttpGet(url)
+if not source or #source < 1000 then
+    warn("[Loader] HttpGet failed or returned incomplete data (" .. tostring(#source) .. " bytes)")
+    return
+end
+local chunk, err = loadstring(source, "=UE")
+if not chunk then
+    warn("[Loader] loadstring failed: " .. tostring(err))
+    return
+end
+chunk()
