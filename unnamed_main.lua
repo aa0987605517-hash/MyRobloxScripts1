@@ -494923,29 +494923,35 @@ task.spawn(function()
                 if strafeConn then strafeConn:Disconnect(); strafeConn = nil end
                 if not val then return end
                 strafeSide = 1
-                -- Capture the Y floor once when strafe activates; lock to that value.
+                -- Capture base position once at activation; jitter offsets from this fixed anchor.
                 local char0 = LocalPlayer.Character
                 local hrp0  = char0 and char0:FindFirstChild("HumanoidRootPart")
-                local lockedY = hrp0 and (hrp0.Position.Y - STRAFE_BELOW)
-                -- RenderStepped fires BEFORE physics so we can zero velocity + fix position
-                -- before gravity has a chance to accumulate.
+                local lockedY  = hrp0 and (hrp0.Position.Y - STRAFE_BELOW)
+                local baseX    = hrp0 and hrp0.Position.X
+                local baseZ    = hrp0 and hrp0.Position.Z
+                local lastSwing = 0
+                -- RenderStepped fires BEFORE physics so we zero velocity before gravity acts.
                 strafeConn = RunServiceRS.RenderStepped:Connect(function()
                     local char = LocalPlayer.Character
                     if not char then return end
                     local hrp = char:FindFirstChild("HumanoidRootPart")
                     if not hrp then return end
-                    -- Re-capture if character respawned
-                    if not lockedY then lockedY = hrp.Position.Y - STRAFE_BELOW end
-                    -- Zero all velocity so gravity cannot accumulate between frames
+                    -- Re-capture on respawn (all three anchor values reset together)
+                    if not lockedY then
+                        lockedY = hrp.Position.Y - STRAFE_BELOW
+                        baseX   = hrp.Position.X
+                        baseZ   = hrp.Position.Z
+                    end
+                    -- Zero velocity so gravity cannot accumulate between frames
                     hrp.AssemblyLinearVelocity  = Vector3.zero
                     hrp.AssemblyAngularVelocity = Vector3.zero
-                    local pos   = hrp.CFrame.Position
-                    local right = hrp.CFrame.RightVector
+                    -- Jitter offset from fixed anchor, not from drifting current pos
+                    local right  = hrp.CFrame.RightVector
                     local jitter = STRAFE_JITTER * strafeSide
                     local newPos = Vector3.new(
-                        pos.X + right.X * jitter,
+                        baseX + right.X * jitter,
                         lockedY,
-                        pos.Z + right.Z * jitter
+                        baseZ + right.Z * jitter
                     )
                     local look = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
                     if look.Magnitude > 0.001 then
@@ -494954,8 +494960,15 @@ task.spawn(function()
                         hrp.CFrame = CFrame.new(newPos) * (hrp.CFrame - hrp.CFrame.Position)
                     end
                     strafeSide = -strafeSide
-                    local tool = char:FindFirstChildWhichIsA("Tool")
-                    if tool then pcall(function() tool:Activate() end) end
+                    -- Swing with a short cooldown so the game registers each hit
+                    local now = tick()
+                    if now - lastSwing >= 0.08 then
+                        local tool = char:FindFirstChildWhichIsA("Tool")
+                        if tool then
+                            pcall(function() tool:Activate() end)
+                            lastSwing = now
+                        end
+                    end
                 end)
             end)
         end
