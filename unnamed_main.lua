@@ -494923,17 +494923,23 @@ task.spawn(function()
                 if strafeConn then strafeConn:Disconnect(); strafeConn = nil end
                 if not val then return end
                 strafeSide = 1
+                -- Capture the Y floor once when strafe activates; lock to that value.
+                local char0 = LocalPlayer.Character
+                local hrp0  = char0 and char0:FindFirstChild("HumanoidRootPart")
+                local lockedY = hrp0 and (hrp0.Position.Y - STRAFE_BELOW) or nil
                 strafeConn = RunServiceRS.Heartbeat:Connect(function()
                     local char = LocalPlayer.Character
                     if not char then return end
                     local hrp = char:FindFirstChild("HumanoidRootPart")
                     if not hrp then return end
+                    -- Re-capture Y if character changed (respawn)
+                    if not lockedY then lockedY = hrp.Position.Y - STRAFE_BELOW end
                     local pos   = hrp.CFrame.Position
                     local right = hrp.CFrame.RightVector
                     local jitter = STRAFE_JITTER * strafeSide
                     local newPos = Vector3.new(
                         pos.X + right.X * jitter,
-                        pos.Y - STRAFE_BELOW,
+                        lockedY,
                         pos.Z + right.Z * jitter
                     )
                     local look = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
