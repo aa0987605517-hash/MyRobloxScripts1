@@ -494479,17 +494479,7 @@ task.spawn(function()
         end)
     end
 
-    -- Standalone connection — NOT stored in thumbConns so stopThumbSpoof can never
-    -- accidentally disconnect it. Restarts the PlayerGui thumbnail scanner after
-    -- each respawn so the UI thumbnails refresh to the spoofed avatar.
-    LocalPlayer.CharacterAdded:Connect(function()
-        if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
-            task.delay(1, function()
-                stopThumbSpoof()
-                task.spawn(startThumbSpoof)
-            end)
-        end
-    end)
+    -- (merged into the single handler below)
 
     -- === AVATAR SPOOF (port of KiciaHook standalone AvatarSpoof) ===
     AvatarSpoof._spoofedInstances = {}
@@ -494686,28 +494676,43 @@ task.spawn(function()
         AvatarSpoof._stashed = {}
     end
 
-    -- Standalone connection — NOT stored in thumbConns, never disconnected.
-    -- On every CharacterAdded (training area / lobby / match / respawn):
-    -- if Avatar Spoof is on, toggle it OFF then back ON so the full apply
-    -- logic in OnChanged runs from scratch on the new character.
+    -- Single handler for every scene change: respawn, training, lobby, match.
+    -- Directly re-applies the spoof without going through SetValue so there
+    -- is no SettingValue guard, no UI flicker, and no race with the old thumb
+    -- scanner handler.
     LocalPlayer.CharacterAdded:Connect(function(char)
         if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
         task.spawn(function()
-            -- Wipe stale per-character data so the new character starts clean.
+            -- Reset all per-character state.
             AvatarSpoof._spoofedInstances = {}
             AvatarSpoof._stashed         = {}
+            AvatarSpoof._applying        = false
             AvatarSpoof._pending         = false
+            if AvatarSpoof._watchConn then
+                pcall(function() AvatarSpoof._watchConn:Disconnect() end)
+                AvatarSpoof._watchConn = nil
+            end
 
-            -- Wait for the character rig and Rivals' initial outfit to load.
+            -- Restart the thumbnail scanner immediately.
+            stopThumbSpoof()
+            task.spawn(startThumbSpoof)
+
+            -- Wait for the character rig and Rivals' initial outfit to settle.
             pcall(function() char:WaitForChild("HumanoidRootPart", 10) end)
-            task.wait(1)
+            task.wait(1.5)
 
             if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
 
-            -- Toggle OFF → ON: forces OnChanged to re-run the full apply flow.
-            Toggles.IS_AvatarSpoof:SetValue(false)
-            task.wait(0.1)
-            Toggles.IS_AvatarSpoof:SetValue(true)
+            local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+            if not sid then lib:Notify("[CharSpoof] no UserId set", 4) return end
+
+            local ok, msg = AvatarSpoof.ApplyToCharacter(char, sid)
+            if ok then
+                lib:Notify("[CharSpoof] reapplied", 3)
+            else
+                lib:Notify("[CharSpoof] reapply fail: " .. tostring(msg), 5)
+            end
+            AvatarSpoof.Watch(char)
         end)
     end)
 
