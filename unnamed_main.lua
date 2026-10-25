@@ -494686,9 +494686,10 @@ task.spawn(function()
         AvatarSpoof._stashed = {}
     end
 
-    -- Standalone connection — NOT stored in thumbConns so it can never be
-    -- disconnected by stopThumbSpoof. This is the only handler that matters
-    -- for keeping Avatar Spoof alive across lobby → training → match transitions.
+    -- Standalone connection — NOT stored in thumbConns, never disconnected.
+    -- On every CharacterAdded (training area / lobby / match / respawn):
+    -- if Avatar Spoof is on, toggle it OFF then back ON so the full apply
+    -- logic in OnChanged runs from scratch on the new character.
     LocalPlayer.CharacterAdded:Connect(function(char)
         if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
         task.spawn(function()
@@ -494697,22 +494698,16 @@ task.spawn(function()
             AvatarSpoof._stashed         = {}
             AvatarSpoof._pending         = false
 
-            -- Wait for the character rig to fully initialise.
+            -- Wait for the character rig and Rivals' initial outfit to load.
             pcall(function() char:WaitForChild("HumanoidRootPart", 10) end)
-            task.wait(1)  -- let Rivals apply its initial outfit first
+            task.wait(1)
 
-            local userId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-            if not userId then return end
             if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
 
-            -- Watch BEFORE apply so any outfit items Rivals adds during the async
-            -- avatar fetch are caught and trigger a re-apply automatically.
-            AvatarSpoof.Watch(char)
-
-            local okApply, msg = AvatarSpoof.ApplyToCharacter(char, userId)
-            if not okApply then
-                warn("[AvatarSpoof] respawn reapply: " .. tostring(msg))
-            end
+            -- Toggle OFF → ON: forces OnChanged to re-run the full apply flow.
+            Toggles.IS_AvatarSpoof:SetValue(false)
+            task.wait(0.1)
+            Toggles.IS_AvatarSpoof:SetValue(true)
         end)
     end)
 
