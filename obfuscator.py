@@ -5,6 +5,12 @@ Roblox Lua 高度混淆工具
 """
 import sys, random, string, re, binascii, os
 
+# 只替換這些字元組成的字串，避免破壞二進位/escape 字串
+_SAFE_CHARS = frozenset(
+    string.ascii_letters + string.digits +
+    " !#$%&()*+,-./:;<=>?@[]^_`{|}~ "
+)
+
 # ── 亂名生成器 ─────────────────────────────────────────────
 CONFUSABLES = [
     "l", "l", "L", "I",  # l / L / I
@@ -97,16 +103,17 @@ def layer_one(src: str) -> str:
     counter    = [0]
 
     def replace_str(m):
-        quote = m.group(1)
-        body  = m.group(2)
-        if len(body) == 0 or len(body) > 200:
+        body = m.group(2)
+        # Only replace simple, safe ASCII strings — skip anything with
+        # backslash escapes, null bytes, or non-ASCII (binary Lua constants).
+        if len(body) < 2 or len(body) > 120:
+            return m.group(0)
+        if '\\' in body:
+            return m.group(0)
+        if not all(c in _SAFE_CHARS for c in body):
             return m.group(0)
         vname = confuse_name(10)
-        try:
-            content = body.encode('utf-8').decode('unicode_escape') if '\\' in body else body
-        except Exception:
-            content = body
-        string_map[vname] = (content, key)
+        string_map[vname] = (body, key)
         counter[0] += 1
         return vname
 
