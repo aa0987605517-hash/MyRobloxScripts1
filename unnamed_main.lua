@@ -494748,11 +494748,14 @@ task.spawn(function()
             if method == "FireServer" then
                 if Toggles.IS_CamSpoof and Toggles.IS_CamSpoof.Value then
                     local isRemEvent = false
-                    pcall(function() isRemEvent = self:IsA("RemoteEvent") end)
+                    pcall(function()
+                        isRemEvent = self:IsA("RemoteEvent") or self:IsA("UnreliableRemoteEvent")
+                    end)
                     if isRemEvent then
                         local args = table.pack(...)
                         local myChar = LocalPlayer.Character
                         local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                        local hitAny = false
                         if myHrp then
                             local nearestPos, minDist = nil, math.huge
                             for _, p in ipairs(Players:GetPlayers()) do
@@ -494767,15 +494770,41 @@ task.spawn(function()
                                 end
                             end
                             if nearestPos then
-                                for i = 1, args.n do
-                                    if typeof(args[i]) == "CFrame" then
-                                        local dir = nearestPos - args[i].Position
+                                -- Recursively walk args (and nested tables) replacing any
+                                -- CFrame so camera data buried in a struct is still caught.
+                                local function spoofValue(v)
+                                    if typeof(v) == "CFrame" then
+                                        local dir = nearestPos - v.Position
                                         if dir.Magnitude > 0.001 then
-                                            args[i] = CFrame.new(args[i].Position, args[i].Position + dir.Unit)
+                                            hitAny = true
+                                            return CFrame.new(v.Position, v.Position + dir.Unit)
                                         end
+                                        return v
+                                    elseif typeof(v) == "table" then
+                                        local changed = false
+                                        local out = {}
+                                        for k, vv in pairs(v) do
+                                            local nv = spoofValue(vv)
+                                            if nv ~= vv then changed = true end
+                                            out[k] = nv
+                                        end
+                                        return changed and out or v
                                     end
+                                    return v
+                                end
+                                for i = 1, args.n do
+                                    local ok2, nv = pcall(spoofValue, args[i])
+                                    if ok2 then args[i] = nv end
                                 end
                             end
+                        end
+                        if Toggles.IS_CamSpoofDebug and Toggles.IS_CamSpoofDebug.Value then
+                            local path = "?"
+                            pcall(function() path = self:GetFullName() end)
+                            local types = {}
+                            for i = 1, args.n do types[i] = typeof(args[i]) end
+                            lib:Notify(("[CamSpoof] %s hit=%s args=%s"):format(
+                                path, tostring(hitAny), table.concat(types, ",")), 4)
                         end
                         return oldNc(self, table.unpack(args, 1, args.n))
                     end
@@ -494918,6 +494947,12 @@ task.spawn(function()
             Text    = 'Camera Remote Spoof',
             Default = false,
             Tooltip = 'FireServer sends spoofed camera angles (aim at nearest enemy)',
+        })
+
+        ragExtrasGroup:AddToggle('IS_CamSpoofDebug', {
+            Text    = 'Cam Spoof Debug Log',
+            Default = false,
+            Tooltip = 'Notify which remote/args are seen by the FireServer hook (use to find the right remote)',
         })
 
         -- Strafe jitter implementation
