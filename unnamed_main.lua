@@ -494847,56 +494847,53 @@ task.spawn(function()
         end)
     end
 
-    -- === FAST ATTACK (speed up attack animations so cooldown resets faster) ===
+    -- === FAST ATTACK (hook task.wait + wait to shrink tool debounce cooldowns) ===
     pcall(function()
         local atkGroup = miscTab:AddLeftGroupbox('Fast Attack')
 
         atkGroup:AddToggle('IS_FastAtk', {
             Text    = 'Fast Attack',
             Default = false,
-            Tooltip = 'Speed up all playing animations so attack cooldown resets faster',
+            Tooltip = 'Hook task.wait/wait so tool debounce cooldowns complete instantly',
         })
 
-        atkGroup:AddSlider('IS_AtkSpeedMult', {
-            Text     = 'Attack Speed Multiplier',
-            Default  = 3,
+        atkGroup:AddSlider('IS_AtkWaitCap', {
+            Text     = 'Wait Cap (ms)',
+            Default  = 10,
             Min      = 1,
-            Max      = 10,
-            Rounding = 1,
-            Tooltip  = 'How many times faster attack animations play (higher = faster attacks)',
+            Max      = 200,
+            Rounding = 0,
+            Tooltip  = 'Any task.wait/wait longer than this (ms) is capped to this value',
         })
 
-        local atkConn = nil
-        if Toggles.IS_FastAtk then
-            Toggles.IS_FastAtk:OnChanged(function(val)
-                if atkConn then atkConn:Disconnect(); atkConn = nil end
-                if not val then
-                    -- Restore animation speeds to normal on disable
-                    pcall(function()
-                        local char = LocalPlayer.Character
-                        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-                        local anim = hum  and hum:FindFirstChildOfClass("Animator")
-                        if anim then
-                            for _, track in ipairs(anim:GetPlayingAnimationTracks()) do
-                                pcall(function() track:AdjustSpeed(1) end)
-                            end
-                        end
-                    end)
-                    return
-                end
-                atkConn = game:GetService("RunService").RenderStepped:Connect(function()
-                    local char = LocalPlayer.Character
-                    if not char then return end
-                    local hum  = char:FindFirstChildOfClass("Humanoid")
-                    local anim = hum and hum:FindFirstChildOfClass("Animator")
-                    if not anim then return end
-                    local mult = (Options.IS_AtkSpeedMult and Options.IS_AtkSpeedMult.Value) or 3
-                    for _, track in ipairs(anim:GetPlayingAnimationTracks()) do
-                        pcall(function() track:AdjustSpeed(mult) end)
-                    end
-                end)
-            end)
+        -- Hook task.wait and the legacy wait() once at load time;
+        -- the toggle gates whether the cap actually applies.
+        local realTaskWait = task.wait
+        local realWait     = wait  -- legacy global
+
+        local function cappedWait(n, ...)
+            if Toggles.IS_FastAtk and Toggles.IS_FastAtk.Value then
+                local cap = ((Options.IS_AtkWaitCap and Options.IS_AtkWaitCap.Value) or 10) / 1000
+                if not n or n > cap then n = cap end
+            end
+            return realTaskWait(n, ...)
         end
+
+        local function cappedLegacyWait(n, ...)
+            if Toggles.IS_FastAtk and Toggles.IS_FastAtk.Value then
+                local cap = ((Options.IS_AtkWaitCap and Options.IS_AtkWaitCap.Value) or 10) / 1000
+                if not n or n > cap then n = cap end
+            end
+            return realWait(n, ...)
+        end
+
+        pcall(function()
+            task.wait = newcclosure(cappedWait)
+        end)
+        pcall(function()
+            -- override legacy wait in the global environment
+            getgenv().wait = newcclosure(cappedLegacyWait)
+        end)
     end)
 
     -- Re-trigger autoload now that IS_ toggles/inputs exist
