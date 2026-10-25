@@ -494728,7 +494728,7 @@ task.spawn(function()
             local ok, method = pcall(getnamecallmethod)
             if not ok then return oldNc(self, ...) end
 
-            if method ~= "GetUserThumbnailAsync" and method ~= "InvokeServer" then
+            if method ~= "GetUserThumbnailAsync" and method ~= "InvokeServer" and method ~= "Invoke" then
                 return oldNc(self, ...)
             end
 
@@ -494746,26 +494746,33 @@ task.spawn(function()
 
             local results = table.pack(oldNc(self, ...))
 
-            local isRemFunc = false
-            pcall(function() isRemFunc = self:IsA("RemoteFunction") end)
-            if isRemFunc and type(results[1]) == "table" then
+            -- Intercept both RemoteFunction:InvokeServer and BindableFunction:Invoke
+            local isInvokable = false
+            pcall(function()
+                isInvokable = self:IsA("RemoteFunction") or self:IsA("BindableFunction")
+            end)
+            if isInvokable and type(results[1]) == "table" then
                 pcall(function()
                     local seen = {}
                     local function tryPatch(t)
                         if type(t) ~= "table" or seen[t] then return end
                         seen[t] = true
-                        local hasLevel = t.Level ~= nil and type(t.Level) == "number"
-                        local hasELO = t.DisplayELO ~= nil and type(t.DisplayELO) == "number"
-                        local hasStreak = t.StatisticDuelsWinStreak ~= nil and type(t.StatisticDuelsWinStreak) == "number"
+                        -- Accept both number and string types so we handle any server encoding
+                        local hasLevel  = t.Level ~= nil and (type(t.Level) == "number" or type(t.Level) == "string")
+                        local hasELO    = t.DisplayELO ~= nil
+                        local hasStreak = t.StatisticDuelsWinStreak ~= nil and (type(t.StatisticDuelsWinStreak) == "number" or type(t.StatisticDuelsWinStreak) == "string")
                         if hasLevel or hasELO or hasStreak then
                             if hasLevel and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
-                                t.Level = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
+                                local v = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
+                                t.Level = type(t.Level) == "string" and tostring(math.floor(v)) or v
                             end
                             if hasELO and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
-                                t.DisplayELO = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
+                                local v = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
+                                t.DisplayELO = type(t.DisplayELO) == "string" and tostring(math.floor(v)) or v
                             end
                             if hasStreak and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
-                                t.StatisticDuelsWinStreak = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
+                                local v = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
+                                t.StatisticDuelsWinStreak = type(t.StatisticDuelsWinStreak) == "string" and tostring(math.floor(v)) or v
                             end
                         end
                         for _, v in pairs(t) do
