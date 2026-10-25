@@ -494847,26 +494847,53 @@ task.spawn(function()
         end)
     end
 
-    -- === FAST ATTACK (rapid tool:Activate every RenderStepped) ===
+    -- === FAST ATTACK (speed up attack animations so cooldown resets faster) ===
     pcall(function()
         local atkGroup = miscTab:AddLeftGroupbox('Fast Attack')
 
         atkGroup:AddToggle('IS_FastAtk', {
             Text    = 'Fast Attack',
             Default = false,
-            Tooltip = 'Spam tool:Activate every frame for maximum attack speed',
+            Tooltip = 'Speed up all playing animations so attack cooldown resets faster',
+        })
+
+        atkGroup:AddSlider('IS_AtkSpeedMult', {
+            Text     = 'Attack Speed Multiplier',
+            Default  = 3,
+            Min      = 1,
+            Max      = 10,
+            Rounding = 1,
+            Tooltip  = 'How many times faster attack animations play (higher = faster attacks)',
         })
 
         local atkConn = nil
         if Toggles.IS_FastAtk then
             Toggles.IS_FastAtk:OnChanged(function(val)
                 if atkConn then atkConn:Disconnect(); atkConn = nil end
-                if not val then return end
+                if not val then
+                    -- Restore animation speeds to normal on disable
+                    pcall(function()
+                        local char = LocalPlayer.Character
+                        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+                        local anim = hum  and hum:FindFirstChildOfClass("Animator")
+                        if anim then
+                            for _, track in ipairs(anim:GetPlayingAnimationTracks()) do
+                                pcall(function() track:AdjustSpeed(1) end)
+                            end
+                        end
+                    end)
+                    return
+                end
                 atkConn = game:GetService("RunService").RenderStepped:Connect(function()
-                    local char = game:GetService("Players").LocalPlayer.Character
+                    local char = LocalPlayer.Character
                     if not char then return end
-                    local tool = char:FindFirstChildWhichIsA("Tool")
-                    if tool then pcall(function() tool:Activate() end) end
+                    local hum  = char:FindFirstChildOfClass("Humanoid")
+                    local anim = hum and hum:FindFirstChildOfClass("Animator")
+                    if not anim then return end
+                    local mult = (Options.IS_AtkSpeedMult and Options.IS_AtkSpeedMult.Value) or 3
+                    for _, track in ipairs(anim:GetPlayingAnimationTracks()) do
+                        pcall(function() track:AdjustSpeed(mult) end)
+                    end
                 end)
             end)
         end
