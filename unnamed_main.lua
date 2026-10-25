@@ -494926,14 +494926,19 @@ task.spawn(function()
                 -- Capture the Y floor once when strafe activates; lock to that value.
                 local char0 = LocalPlayer.Character
                 local hrp0  = char0 and char0:FindFirstChild("HumanoidRootPart")
-                local lockedY = hrp0 and (hrp0.Position.Y - STRAFE_BELOW) or nil
-                strafeConn = RunServiceRS.Heartbeat:Connect(function()
+                local lockedY = hrp0 and (hrp0.Position.Y - STRAFE_BELOW)
+                -- RenderStepped fires BEFORE physics so we can zero velocity + fix position
+                -- before gravity has a chance to accumulate.
+                strafeConn = RunServiceRS.RenderStepped:Connect(function()
                     local char = LocalPlayer.Character
                     if not char then return end
                     local hrp = char:FindFirstChild("HumanoidRootPart")
                     if not hrp then return end
-                    -- Re-capture Y if character changed (respawn)
+                    -- Re-capture if character respawned
                     if not lockedY then lockedY = hrp.Position.Y - STRAFE_BELOW end
+                    -- Zero all velocity so gravity cannot accumulate between frames
+                    hrp.AssemblyLinearVelocity  = Vector3.zero
+                    hrp.AssemblyAngularVelocity = Vector3.zero
                     local pos   = hrp.CFrame.Position
                     local right = hrp.CFrame.RightVector
                     local jitter = STRAFE_JITTER * strafeSide
