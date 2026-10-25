@@ -494426,17 +494426,19 @@ task.spawn(function()
 
     local function stopThumbSpoof()
         thumbSpoofActive = false
-        -- Preserve slots 98/99 (CharacterAdded handlers for AvatarSpoof reapply).
-        -- Clearing those disconnects the reapply logic permanently, which is the
-        -- root cause of the spoof vanishing after entering training/lobby/match.
-        local saved98 = thumbConns[98]
-        local saved99 = thumbConns[99]
-        for _, conn in pairs(thumbConns) do
-            if conn then pcall(function() conn:Disconnect() end) end
+        -- Skip slots 98/99: they are the CharacterAdded handlers that reapply
+        -- AvatarSpoof after scene changes. Disconnecting them would permanently
+        -- break the reapply, which was the original bug.
+        for k, conn in pairs(thumbConns) do
+            if k ~= 98 and k ~= 99 and conn then
+                pcall(function() conn:Disconnect() end)
+            end
         end
+        local keep98 = thumbConns[98]
+        local keep99 = thumbConns[99]
         thumbConns = {}
-        thumbConns[98] = saved98
-        thumbConns[99] = saved99
+        thumbConns[98] = keep98
+        thumbConns[99] = keep99
     end
 
     -- Declared here so the toggle handler below can see it; the methods are
