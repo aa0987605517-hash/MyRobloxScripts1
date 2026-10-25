@@ -494697,9 +494697,9 @@ task.spawn(function()
             stopThumbSpoof()
             task.spawn(startThumbSpoof)
 
-            -- Wait for the character rig and Rivals' initial outfit to settle.
+            -- Wait for the character rig to load, then a short settle time.
             pcall(function() char:WaitForChild("HumanoidRootPart", 10) end)
-            task.wait(1.5)
+            task.wait(0.5)
 
             if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
 
