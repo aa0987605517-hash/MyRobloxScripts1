@@ -494426,19 +494426,10 @@ task.spawn(function()
 
     local function stopThumbSpoof()
         thumbSpoofActive = false
-        -- Skip slots 98/99: they are the CharacterAdded handlers that reapply
-        -- AvatarSpoof after scene changes. Disconnecting them would permanently
-        -- break the reapply, which was the original bug.
-        for k, conn in pairs(thumbConns) do
-            if k ~= 98 and k ~= 99 and conn then
-                pcall(function() conn:Disconnect() end)
-            end
+        for _, conn in pairs(thumbConns) do
+            if conn then pcall(function() conn:Disconnect() end) end
         end
-        local keep98 = thumbConns[98]
-        local keep99 = thumbConns[99]
         thumbConns = {}
-        thumbConns[98] = keep98
-        thumbConns[99] = keep99
     end
 
     -- Declared here so the toggle handler below can see it; the methods are
@@ -494488,11 +494479,12 @@ task.spawn(function()
         end)
     end
 
-    thumbConns[99] = LocalPlayer.CharacterAdded:Connect(function()
+    -- Standalone connection — NOT stored in thumbConns so stopThumbSpoof can never
+    -- accidentally disconnect it. Restarts the PlayerGui thumbnail scanner after
+    -- each respawn so the UI thumbnails refresh to the spoofed avatar.
+    LocalPlayer.CharacterAdded:Connect(function()
         if Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
             task.delay(1, function()
-                -- stopThumbSpoof now preserves slots 98/99, so the CharacterAdded
-                -- handlers survive and AvatarSpoof reapply keeps working.
                 stopThumbSpoof()
                 task.spawn(startThumbSpoof)
             end)
@@ -494694,18 +494686,33 @@ task.spawn(function()
         AvatarSpoof._stashed = {}
     end
 
-    -- Reapply after respawn, matching the standalone's 1s settle delay
-    thumbConns[98] = LocalPlayer.CharacterAdded:Connect(function(char)
+    -- Standalone connection — NOT stored in thumbConns so it can never be
+    -- disconnected by stopThumbSpoof. This is the only handler that matters
+    -- for keeping Avatar Spoof alive across lobby → training → match transitions.
+    LocalPlayer.CharacterAdded:Connect(function(char)
         if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
         task.spawn(function()
-            task.wait(1)
+            -- Wipe stale per-character data so the new character starts clean.
+            AvatarSpoof._spoofedInstances = {}
+            AvatarSpoof._stashed         = {}
+            AvatarSpoof._pending         = false
+
+            -- Wait for the character rig to fully initialise.
+            pcall(function() char:WaitForChild("HumanoidRootPart", 10) end)
+            task.wait(1)  -- let Rivals apply its initial outfit first
+
             local userId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
             if not userId then return end
+            if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+
+            -- Watch BEFORE apply so any outfit items Rivals adds during the async
+            -- avatar fetch are caught and trigger a re-apply automatically.
+            AvatarSpoof.Watch(char)
+
             local okApply, msg = AvatarSpoof.ApplyToCharacter(char, userId)
             if not okApply then
-                warn("[AvatarSpoof] " .. tostring(msg))
+                warn("[AvatarSpoof] respawn reapply: " .. tostring(msg))
             end
-            AvatarSpoof.Watch(char)
         end)
     end)
 
