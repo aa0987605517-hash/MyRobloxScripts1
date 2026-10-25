@@ -494728,7 +494728,7 @@ task.spawn(function()
             local ok, method = pcall(getnamecallmethod)
             if not ok then return oldNc(self, ...) end
 
-            if method ~= "GetUserThumbnailAsync" and method ~= "InvokeServer" and method ~= "Invoke" then
+            if method ~= "GetUserThumbnailAsync" and method ~= "InvokeServer" and method ~= "Invoke" and method ~= "FireServer" then
                 return oldNc(self, ...)
             end
 
@@ -494739,6 +494739,45 @@ task.spawn(function()
                     if spoofId and thumbArgs[1] == LocalPlayer.UserId then
                         thumbArgs[1] = spoofId
                         return oldNc(self, unpack(thumbArgs))
+                    end
+                end
+                return oldNc(self, ...)
+            end
+
+            -- FireServer: spoof CFrame arguments to point at nearest enemy
+            if method == "FireServer" then
+                if Toggles.IS_CamSpoof and Toggles.IS_CamSpoof.Value then
+                    local isRemEvent = false
+                    pcall(function() isRemEvent = self:IsA("RemoteEvent") end)
+                    if isRemEvent then
+                        local args = table.pack(...)
+                        local myChar = LocalPlayer.Character
+                        local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                        if myHrp then
+                            local nearestPos, minDist = nil, math.huge
+                            for _, p in ipairs(Players:GetPlayers()) do
+                                if p ~= LocalPlayer and p.Character then
+                                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                                    if hrp then
+                                        local d = (hrp.Position - myHrp.Position).Magnitude
+                                        if d < minDist then
+                                            minDist = d; nearestPos = hrp.Position
+                                        end
+                                    end
+                                end
+                            end
+                            if nearestPos then
+                                for i = 1, args.n do
+                                    if typeof(args[i]) == "CFrame" then
+                                        local dir = nearestPos - args[i].Position
+                                        if dir.Magnitude > 0.001 then
+                                            args[i] = CFrame.new(args[i].Position, args[i].Position + dir.Unit)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        return oldNc(self, table.unpack(args, 1, args.n))
                     end
                 end
                 return oldNc(self, ...)
@@ -494846,6 +494885,70 @@ task.spawn(function()
             end
         end)
     end
+
+    -- === RAGEBOT EXTRAS (Strafe Jitter + Camera Spoof) ===
+    pcall(function()
+        -- Find the ragebot tab; fall back to miscTab
+        local ragTab = miscTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            local n = tostring(name):lower()
+            if n == 'ragebot' or n == 'combat' or n == 'aim' then
+                ragTab = tab; break
+            end
+        end
+
+        local ragExtrasGroup = ragTab:AddLeftGroupbox('Ragebot Extras')
+
+        ragExtrasGroup:AddToggle('IS_StrafeMode', {
+            Text    = 'Strafe Jitter',
+            Default = false,
+            Tooltip = 'Lock Y-7, rapid left-right jitter + auto-swing',
+        })
+
+        ragExtrasGroup:AddToggle('IS_CamSpoof', {
+            Text    = 'Camera Remote Spoof',
+            Default = false,
+            Tooltip = 'FireServer sends spoofed camera angles (aim at nearest enemy)',
+        })
+
+        -- Strafe jitter implementation
+        local RunServiceRS = game:GetService("RunService")
+        local strafeConn   = nil
+        local strafeSide   = 1
+        local STRAFE_BELOW  = 7
+        local STRAFE_JITTER = 2.5
+
+        if Toggles.IS_StrafeMode then
+            Toggles.IS_StrafeMode:OnChanged(function(val)
+                if strafeConn then strafeConn:Disconnect(); strafeConn = nil end
+                if not val then return end
+                strafeSide = 1
+                strafeConn = RunServiceRS.Heartbeat:Connect(function()
+                    local char = LocalPlayer.Character
+                    if not char then return end
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return end
+                    local pos   = hrp.CFrame.Position
+                    local right = hrp.CFrame.RightVector
+                    local jitter = STRAFE_JITTER * strafeSide
+                    local newPos = Vector3.new(
+                        pos.X + right.X * jitter,
+                        pos.Y - STRAFE_BELOW,
+                        pos.Z + right.Z * jitter
+                    )
+                    local look = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
+                    if look.Magnitude > 0.001 then
+                        hrp.CFrame = CFrame.lookAt(newPos, newPos + look.Unit)
+                    else
+                        hrp.CFrame = CFrame.new(newPos) * (hrp.CFrame - hrp.CFrame.Position)
+                    end
+                    strafeSide = -strafeSide
+                    local tool = char:FindFirstChildWhichIsA("Tool")
+                    if tool then pcall(function() tool:Activate() end) end
+                end)
+            end)
+        end
+    end)
 
     -- Re-trigger autoload now that IS_ toggles/inputs exist
     task.spawn(function()
