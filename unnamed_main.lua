@@ -494847,6 +494847,31 @@ task.spawn(function()
         end)
     end
 
+    -- === FAST ATTACK (rapid tool:Activate every RenderStepped) ===
+    pcall(function()
+        local atkGroup = miscTab:AddLeftGroupbox('Fast Attack')
+
+        atkGroup:AddToggle('IS_FastAtk', {
+            Text    = 'Fast Attack',
+            Default = false,
+            Tooltip = 'Spam tool:Activate every frame for maximum attack speed',
+        })
+
+        local atkConn = nil
+        if Toggles.IS_FastAtk then
+            Toggles.IS_FastAtk:OnChanged(function(val)
+                if atkConn then atkConn:Disconnect(); atkConn = nil end
+                if not val then return end
+                atkConn = game:GetService("RunService").RenderStepped:Connect(function()
+                    local char = game:GetService("Players").LocalPlayer.Character
+                    if not char then return end
+                    local tool = char:FindFirstChildWhichIsA("Tool")
+                    if tool then pcall(function() tool:Activate() end) end
+                end)
+            end)
+        end
+    end)
+
     -- Re-trigger autoload now that IS_ toggles/inputs exist
     task.spawn(function()
         task.wait(0.5)
