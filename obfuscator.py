@@ -39,13 +39,15 @@ def make_xor_runtime(varname: str, s: str, key: int) -> str:
     key_var   = confuse_name(8)
     res_var   = confuse_name(10)
     idx_var   = confuse_name(6)
+    bxor = confuse_name(8)
     return (
         f"local {dec_fn} = string.char\n"
+        f"local {bxor} = bit32.bxor\n"
         f"local {tbl_var} = {enc_tbl}\n"
         f"local {key_var} = {key}\n"
         f"local {res_var} = ''\n"
         f"for {idx_var}=1,#{tbl_var} do\n"
-        f"  {res_var} = {res_var} .. {dec_fn}({tbl_var}[{idx_var}] ~ {key_var})\n"
+        f"  {res_var} = {res_var} .. {dec_fn}({bxor}({tbl_var}[{idx_var}], {key_var}))\n"
         f"end\n"
         f"local {varname} = {res_var}\n"
     )
@@ -163,16 +165,18 @@ def layer_three(src: str) -> str:
     enc_bytes = [b ^ key for b in bytes_in]
     tbl_body  = ",".join(str(v) for v in enc_bytes)
 
+    fn_bx = confuse_name(10)
     return f"""-- Obfuscated Roblox Script
 {junk1}
 local {fn_ls} = loadstring
 local {fn_sc} = string.char
+local {fn_bx} = bit32.bxor
 {junk2}
 local {tbl_var} = {{{tbl_body}}}
 local {res_var} = {{}}
 local {dec_var} = {key}
 for {idx_var}=1,#{tbl_var} do
-  {res_var}[{idx_var}] = {fn_sc}({tbl_var}[{idx_var}] ~ {dec_var})
+  {res_var}[{idx_var}] = {fn_sc}({fn_bx}({tbl_var}[{idx_var}], {dec_var}))
 end
 local {call_var} = {fn_ls}(table.concat({res_var}))
 {call_var}()
