@@ -494905,6 +494905,15 @@ task.spawn(function()
             Tooltip = 'Lock Y-7, rapid left-right jitter + auto-swing',
         })
 
+        ragExtrasGroup:AddSlider('IS_AtkSpeed', {
+            Text    = 'Attack Speed (hits/s)',
+            Default = 20,
+            Min     = 1,
+            Max     = 50,
+            Rounding = 0,
+            Tooltip = 'How many times per second to activate the equipped tool',
+        })
+
         ragExtrasGroup:AddToggle('IS_CamSpoof', {
             Text    = 'Camera Remote Spoof',
             Default = false,
@@ -494923,12 +494932,15 @@ task.spawn(function()
                 if strafeConn then strafeConn:Disconnect(); strafeConn = nil end
                 if not val then return end
                 strafeSide = 1
-                -- Capture base position once at activation; jitter offsets from this fixed anchor.
+                -- Capture anchor once at activation; never change mid-strafe so there's no drift.
                 local char0 = LocalPlayer.Character
                 local hrp0  = char0 and char0:FindFirstChild("HumanoidRootPart")
-                local lockedY  = hrp0 and (hrp0.Position.Y - STRAFE_BELOW)
-                local baseX    = hrp0 and hrp0.Position.X
-                local baseZ    = hrp0 and hrp0.Position.Z
+                local lockedY   = hrp0 and (hrp0.Position.Y - STRAFE_BELOW)
+                local baseX     = hrp0 and hrp0.Position.X
+                local baseZ     = hrp0 and hrp0.Position.Z
+                -- Lock the strafe axis to the ACTIVATION-TIME right vector so the jitter
+                -- direction never changes when the player rotates the camera.
+                local baseRight = (hrp0 and hrp0.CFrame.RightVector) or Vector3.new(1, 0, 0)
                 local lastSwing = 0
                 -- RenderStepped fires BEFORE physics so we zero velocity before gravity acts.
                 strafeConn = RunServiceRS.RenderStepped:Connect(function()
@@ -494936,22 +494948,22 @@ task.spawn(function()
                     if not char then return end
                     local hrp = char:FindFirstChild("HumanoidRootPart")
                     if not hrp then return end
-                    -- Re-capture on respawn (all three anchor values reset together)
+                    -- Re-capture all anchors together on respawn
                     if not lockedY then
-                        lockedY = hrp.Position.Y - STRAFE_BELOW
-                        baseX   = hrp.Position.X
-                        baseZ   = hrp.Position.Z
+                        lockedY   = hrp.Position.Y - STRAFE_BELOW
+                        baseX     = hrp.Position.X
+                        baseZ     = hrp.Position.Z
+                        baseRight = hrp.CFrame.RightVector
                     end
                     -- Zero velocity so gravity cannot accumulate between frames
                     hrp.AssemblyLinearVelocity  = Vector3.zero
                     hrp.AssemblyAngularVelocity = Vector3.zero
-                    -- Jitter offset from fixed anchor, not from drifting current pos
-                    local right  = hrp.CFrame.RightVector
+                    -- Jitter along the fixed activation-time axis only
                     local jitter = STRAFE_JITTER * strafeSide
                     local newPos = Vector3.new(
-                        baseX + right.X * jitter,
+                        baseX + baseRight.X * jitter,
                         lockedY,
-                        baseZ + right.Z * jitter
+                        baseZ + baseRight.Z * jitter
                     )
                     local look = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
                     if look.Magnitude > 0.001 then
@@ -494960,9 +494972,11 @@ task.spawn(function()
                         hrp.CFrame = CFrame.new(newPos) * (hrp.CFrame - hrp.CFrame.Position)
                     end
                     strafeSide = -strafeSide
-                    -- Swing with a short cooldown so the game registers each hit
+                    -- Attack at the user-configured speed (hits/s slider)
+                    local atkSpeed  = (Options.IS_AtkSpeed and Options.IS_AtkSpeed.Value) or 20
+                    local atkInterval = 1 / math.max(1, atkSpeed)
                     local now = tick()
-                    if now - lastSwing >= 0.08 then
+                    if now - lastSwing >= atkInterval then
                         local tool = char:FindFirstChildWhichIsA("Tool")
                         if tool then
                             pcall(function() tool:Activate() end)
