@@ -2,17 +2,31 @@
 -- Loader: unnamed_enhancements + Kicia Rebuild
 -- Toggle UI: right-corner button or Insert key
 -- ============================================================
-local URL_UE    = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/main/kljhgjhk"
-local URL_KICIA = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/main/kicia_rebuild"
+local URL_UE    = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/main/kljhgjhk"
+local URL_KICIA = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/main/kicia_rebuild"
+
+local function safeLoad(url, name)
+    local ok, src = pcall(game.HttpGet, game, url)
+    if not ok or type(src) ~= "string" or #src < 10 then
+        warn("[loader] HttpGet failed for " .. name .. ": " .. tostring(src))
+        return
+    end
+    local fn, err = loadstring(src)
+    if not fn then
+        warn("[loader] loadstring failed for " .. name .. ": " .. tostring(err))
+        return
+    end
+    fn()
+end
 
 -- Part 1: unnamed_enhancements
 task.spawn(function()
-    loadstring(game:HttpGet(URL_UE, true))()
+    safeLoad(URL_UE, "UE")
 end)
 
 -- Part 2: Kicia Rebuild (2s delay to let UE init first)
 task.delay(2, function()
-    loadstring(game:HttpGet(URL_KICIA, true))()
+    safeLoad(URL_KICIA, "Kicia")
 end)
 
 -- UI Toggle (runs after both inited)
