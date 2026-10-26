@@ -1,0 +1,100 @@
+-- ============================================================
+-- Loader: unnamed_enhancements + Kicia Rebuild
+-- Toggle UI: right-corner button or Insert key
+-- ============================================================
+local URL_UE    = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/main/kljhgjhk"
+local URL_KICIA = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/refs/heads/main/kicia_rebuild"
+
+-- Part 1: unnamed_enhancements
+task.spawn(function()
+    loadstring(game:HttpGet(URL_UE, true))()
+end)
+
+-- Part 2: Kicia Rebuild (2s delay to let UE init first)
+task.delay(2, function()
+    loadstring(game:HttpGet(URL_KICIA, true))()
+end)
+
+-- UI Toggle (runs after both inited)
+task.spawn(function()
+    local UIS = game:GetService("UserInputService")
+    local hui = (rawget(getgenv(), "gethui") and gethui()) or game:GetService("CoreGui")
+
+    -- Wait for UE Library ScreenGui
+    local ueGui
+    local deadline = tick() + 60
+    repeat
+        task.wait(0.5)
+        local lib = rawget(getgenv(), "Library")
+        if type(lib) == "table" and typeof(lib.ScreenGui) == "Instance" then
+            ueGui = lib.ScreenGui
+        end
+    until ueGui or tick() > deadline
+    if not ueGui then return end
+
+    -- Snapshot ScreenGuis before Kicia loads
+    local snapshot = {}
+    for _, sg in hui:GetChildren() do
+        if sg:IsA("ScreenGui") then snapshot[sg] = true end
+    end
+
+    -- Wait for Kicia menu object
+    local deadline2 = tick() + 60
+    repeat
+        task.wait(0.5)
+        local kr = rawget(getgenv(), "KiciaRebuild")
+        if type(kr) == "table" and kr.menu then break end
+    until tick() > deadline2
+
+    task.wait(1)
+
+    -- Collect Kicia ScreenGuis (new ones since snapshot)
+    local kiciaGuis = {}
+    for _, sg in hui:GetChildren() do
+        if sg:IsA("ScreenGui") and not snapshot[sg] then
+            table.insert(kiciaGuis, sg)
+        end
+    end
+    if #kiciaGuis == 0 then return end
+
+    -- Build toggle button
+    local tGui = Instance.new("ScreenGui")
+    tGui.Name          = "UEKiciaToggle"
+    tGui.DisplayOrder  = 999
+    tGui.IgnoreGuiInset = true
+    tGui.ResetOnSpawn  = false
+    tGui.Parent        = hui
+
+    local btn = Instance.new("TextButton")
+    btn.Size             = UDim2.new(0, 110, 0, 26)
+    btn.Position         = UDim2.new(1, -118, 0, 8)
+    btn.BackgroundColor3 = Color3.fromRGB(22, 22, 36)
+    btn.TextColor3       = Color3.fromRGB(180, 200, 255)
+    btn.Text             = "[ UE ] | Kicia"
+    btn.Font             = Enum.Font.GothamBold
+    btn.TextSize         = 11
+    btn.BorderSizePixel  = 0
+    btn.Parent           = tGui
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+    local st = Instance.new("UIStroke", btn)
+    st.Color = Color3.fromRGB(70, 70, 120)
+    st.Thickness = 1
+
+    local showUE = true
+    local function doToggle()
+        showUE = not showUE
+        ueGui.Enabled = showUE
+        for _, sg in kiciaGuis do
+            pcall(function() sg.Enabled = not showUE end)
+        end
+        btn.Text = showUE and "[ UE ] | Kicia" or "UE | [ Kicia ]"
+        btn.BackgroundColor3 = showUE
+            and Color3.fromRGB(22, 22, 36)
+            or  Color3.fromRGB(38, 22, 50)
+    end
+
+    btn.MouseButton1Click:Connect(doToggle)
+    UIS.InputBegan:Connect(function(i, gp)
+        if not gp and i.KeyCode == Enum.KeyCode.Insert then doToggle() end
+    end)
+end)
