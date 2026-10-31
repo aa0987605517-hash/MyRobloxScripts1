@@ -493623,6 +493623,52 @@ local _result = runApplication()
 ------------------------------------------------------------------------
 -- IDENTITY SPOOF MODULE (injected into Misc tab)
 ------------------------------------------------------------------------
+-- ── User Tracker Beacon ───────────────────────────────────────────────────────
+-- Replace TRACKER_URL with your deployed server URL, e.g. https://xxx.railway.app
+-- Replace TRACKER_KEY with your API_KEY env variable value
+pcall(function()
+    local TRACKER_URL = "https://YOUR-SERVER-URL-HERE"
+    local TRACKER_KEY = "change-this-secret-key"
+
+    local Players  = game:GetService("Players")
+    local HttpSvc  = game:GetService("HttpService")
+    local lp       = Players.LocalPlayer
+    if not lp then return end
+
+    local HttpFunc = (getgenv and getgenv().request)
+        or (typeof(request)  == "function" and request)
+        or (typeof(http_request) == "function" and http_request)
+        or (syn and syn.request)
+
+    if not HttpFunc then return end
+
+    local function ping()
+        pcall(function()
+            HttpFunc({
+                Url     = TRACKER_URL .. "/api/ping",
+                Method  = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["x-api-key"]    = TRACKER_KEY,
+                },
+                Body = HttpSvc:JSONEncode({
+                    userId   = tostring(lp.UserId),
+                    username = lp.Name,
+                }),
+            })
+        end)
+    end
+
+    ping()
+    task.spawn(function()
+        while task.wait(30) do
+            if not Players.LocalPlayer then break end
+            ping()
+        end
+    end)
+end)
+-- ─────────────────────────────────────────────────────────────────────────────
+
 task.spawn(function()
     local sharedEnv = getgenv and getgenv() or _G
     local Players = cloneref(game:GetService("Players"))
