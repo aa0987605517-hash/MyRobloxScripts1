@@ -493643,8 +493643,8 @@ pcall(function()
     if not HttpFunc then return end
 
     local function ping()
-        pcall(function()
-            HttpFunc({
+        local ok, res = pcall(function()
+            return HttpFunc({
                 Url     = TRACKER_URL .. "/api/ping",
                 Method  = "POST",
                 Headers = {
@@ -493656,6 +493656,14 @@ pcall(function()
                     username = lp.Name,
                 }),
             })
+        end)
+        if not ok or not res then return end
+        -- Check if server says we're banned
+        pcall(function()
+            local data = HttpSvc:JSONDecode(res.Body or res.body or "")
+            if data and data.banned then
+                Players.LocalPlayer:Kick("You are banned from using this script.")
+            end
         end)
     end
 
