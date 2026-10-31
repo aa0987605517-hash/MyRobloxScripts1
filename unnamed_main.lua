@@ -493627,7 +493627,7 @@ local _result = runApplication()
 -- Replace TRACKER_URL with your deployed server URL, e.g. https://xxx.railway.app
 -- Replace TRACKER_KEY with your API_KEY env variable value
 pcall(function()
-    local TRACKER_URL = "https://YOUR-SERVER-URL-HERE"
+    local TRACKER_URL = "https://YOUR-SERVER-URL-HERE/tracker.php"
     local TRACKER_KEY = "change-this-secret-key"
 
     local Players  = game:GetService("Players")
@@ -493645,7 +493645,7 @@ pcall(function()
     local function ping()
         local ok, res = pcall(function()
             return HttpFunc({
-                Url     = TRACKER_URL .. "/api/ping",
+                Url     = TRACKER_URL .. "?action=ping",
                 Method  = "POST",
                 Headers = {
                     ["Content-Type"] = "application/json",
