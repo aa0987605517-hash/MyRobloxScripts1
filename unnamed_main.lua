@@ -495018,24 +495018,36 @@ task.spawn(function()
             end)
         end
 
+        -- Show status in the Season dropdown since notifications aren't visible here
+        local function rcStatus(txt)
+            pcall(function() Options.IS_RCSeason:SetValues({txt}) end)
+            pcall(function() Options.IS_RCSeason:SetValue(txt) end)
+        end
+
         -- Find the game's RankCharm module + rank constants via getgc
         task.spawn(function()
+            if type(getgc) ~= "function" then
+                rcStatus("No getgc (executor)")
+                return
+            end
+
             local function scan()
                 local ok, gc = pcall(getgc, true)
                 if not ok or type(gc) ~= "table" then return nil, nil end
                 local rc, cs
                 for _, obj in pairs(gc) do
                     if type(obj) == "table" then
-                        if not rc and rawget(obj, "_overrides") ~= nil and rawget(obj, "Changed") ~= nil then
+                        -- RankCharm instance: has SetForSeason in its metatable __index
+                        if not rc then
                             local mt = getmetatable(obj)
                             local idx = type(mt) == "table" and rawget(mt, "__index")
                             if type(idx) == "table" and type(rawget(idx, "SetForSeason")) == "function" then
                                 rc = obj
                             end
                         end
+                        -- Constants: just needs RankNames + SeasonCharmNames tables
                         if not cs and type(rawget(obj, "RankNames")) == "table"
-                            and type(rawget(obj, "SeasonCharmNames")) == "table"
-                            and type(rawget(obj, "findRank")) == "function" then
+                            and type(rawget(obj, "SeasonCharmNames")) == "table" then
                             cs = obj
                         end
                         if rc and cs then break end
@@ -495051,8 +495063,15 @@ task.spawn(function()
                 if rankCharm and consts then break end
                 task.wait(0.3)
             end
-            if not (rankCharm and consts) then
-                warn("[RankCharm] RankCharm/consts not found")
+
+            if not rankCharm and not consts then
+                rcStatus("Module not found - join a match")
+                return
+            elseif not rankCharm then
+                rcStatus("consts ok, RankCharm missing")
+                return
+            elseif not consts then
+                rcStatus("RankCharm ok, consts missing")
                 return
             end
 
@@ -495061,11 +495080,14 @@ task.spawn(function()
             local ranks = {'Off'}
             for _, r in ipairs(consts.RankNames) do table.insert(ranks, r) end
 
+            if #seasons == 0 then
+                rcStatus("0 seasons in list")
+                return
+            end
+
             pcall(function() Options.IS_RCSeason:SetValues(seasons) end)
             pcall(function() Options.IS_RCRank:SetValues(ranks) end)
-            if seasons[1] then
-                pcall(function() Options.IS_RCSeason:SetValue(seasons[1]) end)
-            end
+            pcall(function() Options.IS_RCSeason:SetValue(seasons[1]) end)
         end)
     end)
 
