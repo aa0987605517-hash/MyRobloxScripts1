@@ -495057,37 +495057,46 @@ task.spawn(function()
                 return nil
             end
 
-            local function scan()
+            -- Single pass over the gc table, yielding every 4000 objects so
+            -- the client never freezes. getgc(true) can hold hundreds of
+            -- thousands of objects, so we must NOT re-fetch + rescan in a loop.
+            local function scanOnce()
                 local gc = getGC()
-                if not gc then return nil, nil end
-                local rc, cs
+                if not gc then return end
+                local n = 0
                 for _, obj in pairs(gc) do
+                    n = n + 1
+                    if n % 4000 == 0 then
+                        rcSet(("scanning... %d"):format(n))
+                        task.wait()
+                    end
                     if type(obj) == "table" then
-                        -- RankCharm instance: has SetForSeason in its metatable __index
-                        if not rc then
-                            local mt = getmetatable(obj)
-                            local idx = type(mt) == "table" and rawget(mt, "__index")
-                            if type(idx) == "table" and type(rawget(idx, "SetForSeason")) == "function" then
-                                rc = obj
+                        if not rankCharm then
+                            local ok, mt = pcall(getmetatable, obj)
+                            local idx = ok and type(mt) == "table" and rawget(mt, "__index")
+                            if type(idx) == "table" then
+                                local okf, f = pcall(rawget, idx, "SetForSeason")
+                                if okf and type(f) == "function" then rankCharm = obj end
                             end
                         end
-                        -- Constants: just needs RankNames + SeasonCharmNames tables
-                        if not cs and type(rawget(obj, "RankNames")) == "table"
-                            and type(rawget(obj, "SeasonCharmNames")) == "table" then
-                            cs = obj
+                        if not consts then
+                            local okR, rn = pcall(rawget, obj, "RankNames")
+                            local okS, sn = pcall(rawget, obj, "SeasonCharmNames")
+                            if okR and okS and type(rn) == "table" and type(sn) == "table" then
+                                consts = obj
+                            end
                         end
-                        if rc and cs then break end
+                        if rankCharm and consts then return end
                     end
                 end
-                return rc, cs
             end
 
-            for _ = 1, 50 do
-                local a, b = scan()
-                rankCharm = rankCharm or a
-                consts = consts or b
+            -- A few spaced passes (module may load after joining a match),
+            -- but each pass yields internally so it won't lock up the game.
+            for _ = 1, 8 do
+                scanOnce()
                 if rankCharm and consts then break end
-                task.wait(0.3)
+                task.wait(1.5)
             end
 
             if not rankCharm and not consts then
