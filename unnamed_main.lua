@@ -495008,32 +495008,44 @@ task.spawn(function()
             end,
         })
 
-        -- When a season is picked, show its current override
-        if Options.IS_RCSeason then
-            Options.IS_RCSeason:OnChanged(function(season)
-                if not (rankCharm and season and season ~= 'Loading...') then return end
-                local rn, lb = rankCharm:GetForSeason(season)
-                pcall(function() Options.IS_RCRank:SetValue(rn or 'Off') end)
-                pcall(function() Options.IS_RCLb:SetValue(lb and tostring(lb) or '') end)
-            end)
-        end
-
         -- Show status in the Season dropdown since notifications aren't visible here
         local function rcStatus(txt)
             pcall(function() Options.IS_RCSeason:SetValues({txt}) end)
             pcall(function() Options.IS_RCSeason:SetValue(txt) end)
         end
 
+        -- When a season is picked, show its current override (guarded so a
+        -- failure here can't abort the scan task below)
+        pcall(function()
+            if Options.IS_RCSeason and Options.IS_RCSeason.OnChanged then
+                Options.IS_RCSeason:OnChanged(function(season)
+                    if not (rankCharm and season and season ~= 'Loading...') then return end
+                    local rn, lb = rankCharm:GetForSeason(season)
+                    pcall(function() Options.IS_RCRank:SetValue(rn or 'Off') end)
+                    pcall(function() Options.IS_RCLb:SetValue(lb and tostring(lb) or '') end)
+                end)
+            end
+        end)
+
         -- Find the game's RankCharm module + rank constants via getgc
         task.spawn(function()
+            rcStatus("Scanning...")
             if type(getgc) ~= "function" then
                 rcStatus("No getgc (executor)")
                 return
             end
 
-            local function scan()
+            local function getGC()
                 local ok, gc = pcall(getgc, true)
-                if not ok or type(gc) ~= "table" then return nil, nil end
+                if ok and type(gc) == "table" then return gc end
+                ok, gc = pcall(getgc)
+                if ok and type(gc) == "table" then return gc end
+                return nil
+            end
+
+            local function scan()
+                local gc = getGC()
+                if not gc then return nil, nil end
                 local rc, cs
                 for _, obj in pairs(gc) do
                     if type(obj) == "table" then
