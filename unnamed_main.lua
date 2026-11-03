@@ -494950,6 +494950,21 @@ task.spawn(function()
         end)
     end)
 
+    -- === RANK CHARM OVERRIDE (opens the standalone panel below) ===
+    pcall(function()
+        local rcGroup = miscTab:AddLeftGroupbox('Rank Charm')
+        rcGroup:AddButton({
+            Text = 'Toggle Rank Charm UI',
+            Func = function()
+                if _G.KiciaToggleRankCharmUI then
+                    _G.KiciaToggleRankCharmUI()
+                else
+                    lib:Notify("[RankCharmUI] not loaded yet (RankCharm module not found)", 4)
+                end
+            end,
+        })
+    end)
+
     -- Re-trigger autoload now that IS_ toggles/inputs exist
     task.spawn(function()
         task.wait(0.5)
@@ -494960,6 +494975,252 @@ task.spawn(function()
             end
         end)
     end)
+end)
+
+--// Rank Charm Override UI (Standalone)
+--// 載入主腳本 (Kicia Rebuild) 之後執行即可
+--// 用 getgc 自動尋找 RankCharm 模組 和 Season 常數
+--// _G.KiciaToggleRankCharmUI() 切換顯示
+
+task.spawn(function()
+    local function findRankCharm()
+        local okGc, gc = pcall(getgc, true)
+        if not okGc or type(gc) ~= "table" then return nil end
+        for _, obj in pairs(gc) do
+            if type(obj) == "table" then
+                local okO = pcall(rawget, obj, "_overrides")
+                if okO and rawget(obj, "_overrides") ~= nil and rawget(obj, "Changed") ~= nil then
+                    local mt = getmetatable(obj)
+                    if mt and type(mt.__index) == "table" and type(rawget(mt.__index, "SetForSeason")) == "function" and type(rawget(mt.__index, "GetAllOverrides")) == "function" then
+                        return obj
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function findConstants()
+        local okGc, gc = pcall(getgc, true)
+        if not okGc then return nil end
+        for _, obj in pairs(gc) do
+            if type(obj) == "table" then
+                local okR = pcall(rawget, obj, "RankNames")
+                if okR and type(rawget(obj, "RankNames")) == "table"
+                    and type(rawget(obj, "SeasonCharms")) == "table"
+                    and type(rawget(obj, "SeasonCharmNames")) == "table"
+                    and type(rawget(obj, "isSeasonRankCharm")) == "function"
+                then
+                    return obj
+                end
+            end
+        end
+        return nil
+    end
+
+    local rankCharm, consts
+    for _ = 1, 100 do
+        rankCharm = rankCharm or findRankCharm()
+        consts = consts or findConstants()
+        if rankCharm and consts then break end
+        task.wait(0.2)
+    end
+    if not rankCharm or not consts then
+        warn("[RankCharmUI] rankCharm or constants not found — load the main script first")
+        return
+    end
+
+    local Players2 = cloneref and cloneref(game:GetService("Players")) or game:GetService("Players")
+    local UIS2 = cloneref and cloneref(game:GetService("UserInputService")) or game:GetService("UserInputService")
+    local TS2 = cloneref and cloneref(game:GetService("TweenService")) or game:GetService("TweenService")
+    local lp2 = Players2.LocalPlayer
+
+    local function parent2()
+        local ok,h = pcall(function() return gethui and gethui() end)
+        if ok and h then return h end
+        return lp2:WaitForChild("PlayerGui")
+    end
+
+    local function mk(c,p,ch)
+        local i = Instance.new(c)
+        local par
+        for k,v in pairs(p or {}) do if k=="Parent" then par=v else i[k]=v end end
+        for _,x in ipairs(ch or {}) do x.Parent=i end
+        i.Parent=par
+        return i
+    end
+    local function corner2(r) return mk("UICorner",{CornerRadius=r or UDim.new(0,8)}) end
+
+    local gp = parent2()
+    local old = gp:FindFirstChild("RankCharmOverrideUI"); if old then old:Destroy() end
+
+    local gui = mk("ScreenGui",{Name="RankCharmOverrideUI",ResetOnSpawn=false,Enabled=false,DisplayOrder=1000,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=gp})
+
+    local AC = Color3.fromRGB(255,180,60)
+    local BG = Color3.fromRGB(20,20,26)
+    local SD = Color3.fromRGB(28,28,36)
+    local IT = Color3.fromRGB(40,40,52)
+    local OF = Color3.fromRGB(66,66,80)
+    local TX = Color3.fromRGB(235,235,245)
+    local DIM= Color3.fromRGB(150,150,165)
+
+    local panel = mk("Frame",{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0.5,0,0.5,0),Size=UDim2.fromOffset(400,480),BackgroundColor3=BG,BackgroundTransparency=0.1,Parent=gui},{corner2(UDim.new(0,14)),mk("UIStroke",{Color=AC,Transparency=0.4,Thickness=1.2})})
+
+    local header = mk("Frame",{Size=UDim2.new(1,0,0,36),BackgroundColor3=SD,BackgroundTransparency=0.1,Parent=panel},{corner2(UDim.new(0,14))})
+    mk("Frame",{Position=UDim2.new(0,0,1,-10),Size=UDim2.new(1,0,0,10),BackgroundColor3=SD,BackgroundTransparency=0.1,BorderSizePixel=0,Parent=header})
+    mk("TextLabel",{Position=UDim2.fromOffset(14,0),Size=UDim2.new(1,-120,1,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,Text="Rank Charm Override",TextSize=14,TextColor3=TX,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
+    local clearBtn = mk("TextButton",{AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-38,0.5,0),Size=UDim2.fromOffset(70,22),BackgroundColor3=IT,Font=Enum.Font.GothamMedium,Text="Clear All",TextSize=11,TextColor3=TX,AutoButtonColor=false,Parent=header},{corner2(UDim.new(0,6))})
+    local closeBtn = mk("TextButton",{AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-8,0.5,0),Size=UDim2.fromOffset(22,22),BackgroundColor3=IT,Font=Enum.Font.GothamBold,Text="x",TextSize=13,TextColor3=TX,AutoButtonColor=false,Parent=header},{corner2(UDim.new(1,0))})
+
+    local status = mk("TextLabel",{Position=UDim2.fromOffset(14,36),Size=UDim2.new(1,-28,0,20),BackgroundTransparency=1,Font=Enum.Font.Gotham,Text=("%d seasons available  -  %d ranks"):format(#consts.SeasonCharmNames, #consts.RankNames),TextSize=11,TextColor3=DIM,TextXAlignment=Enum.TextXAlignment.Left,Parent=panel})
+
+    local body = mk("ScrollingFrame",{Position=UDim2.fromOffset(0,58),Size=UDim2.new(1,0,1,-58),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=AC,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,Parent=panel},{mk("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder}),mk("UIPadding",{PaddingTop=UDim.new(0,2),PaddingBottom=UDim.new(0,10),PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10)})})
+
+    -- Rank options list: "None" + all ranks
+    local rankOptions = {"None"}
+    for _, rn in ipairs(consts.RankNames) do table.insert(rankOptions, rn) end
+
+    local function requiresLeaderboard(rankName)
+        if rankName == "None" or rankName == nil then return false end
+        -- find RequiresLeaderboard flag from consts.SeasonCharms? Actually consts.RankNames is just names
+        -- Use raw: check if rank name hints "Champion" / "Challenger" etc
+        -- Better: look up via buildMetadata function
+        local ok, meta = pcall(consts.buildMetadata, rankName, 1)
+        if ok and type(meta) == "table" and meta.SeasonLeaderboardRank ~= nil and meta.SeasonELO == nil then
+            return true -- Unranked uses leaderboard rank only? No, unranked is special
+        end
+        -- The flag is in consts.SeasonCharms[?].RequiresLeaderboard... wait that's a different list
+        -- Actually it was v116 (RankNames) with .RequiresLeaderboard field. Let me check differently.
+        return false
+    end
+
+    local orderN = 0
+    local function nextOrd() orderN = orderN + 1; return orderN end
+
+    local rows = {}
+
+    local function makeDropdownAt(parent, posX, posY, w, h, options, current, onPick, maxVisible)
+        local arrow = mk("TextLabel",{Position=UDim2.fromOffset(posX,posY),Size=UDim2.fromOffset(w,h),BackgroundColor3=OF,Font=Enum.Font.GothamMedium,Text="  "..tostring(current or options[1]).."  v",TextSize=11,TextColor3=TX,TextXAlignment=Enum.TextXAlignment.Left,Parent=parent},{corner2(UDim.new(0,6)),mk("UIPadding",{PaddingRight=UDim.new(0,8)})})
+        local btn = mk("TextButton",{Position=UDim2.fromOffset(posX,posY),Size=UDim2.fromOffset(w,h),BackgroundTransparency=1,Text="",ZIndex=2,Parent=parent})
+        local open, list = false, nil
+        local function close()
+            open = false
+            if list then list:Destroy(); list = nil end
+        end
+        local function setText(v) arrow.Text = "  "..tostring(v).."  v" end
+        btn.MouseButton1Click:Connect(function()
+            if open then close(); return end
+            open = true
+            local vis = math.min(#options, maxVisible or 7)
+            local lh = vis * 22
+            list = mk("Frame",{Position=UDim2.fromOffset(posX,posY+h+2),Size=UDim2.fromOffset(w,lh),BackgroundColor3=SD,ZIndex=20,Parent=parent},{corner2(UDim.new(0,6))})
+            local scroll = mk("ScrollingFrame",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=AC,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ZIndex=20,Parent=list},{mk("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder})})
+            for _, opt in ipairs(options) do
+                local b = mk("TextButton",{Size=UDim2.new(1,0,0,22),BackgroundColor3=SD,Font=Enum.Font.Gotham,Text="  "..tostring(opt),TextSize=11,TextColor3=TX,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=20,Parent=scroll})
+                b.MouseButton1Click:Connect(function()
+                    setText(opt)
+                    close()
+                    onPick(opt)
+                end)
+            end
+        end)
+        return {Set=setText, Close=close, GetArrow=function() return arrow end}
+    end
+
+    local function buildRow(seasonCharmName, seasonLabel)
+        local row = mk("Frame",{Size=UDim2.new(1,0,0,40),BackgroundColor3=IT,BackgroundTransparency=0.3,LayoutOrder=nextOrd(),Parent=body,ClipsDescendants=false},{corner2(UDim.new(0,8))})
+        mk("TextLabel",{Position=UDim2.fromOffset(10,0),Size=UDim2.new(0,120,1,0),BackgroundTransparency=1,Font=Enum.Font.GothamMedium,Text=seasonCharmName,TextSize=12,TextColor3=TX,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+        mk("TextLabel",{Position=UDim2.fromOffset(130,0),Size=UDim2.new(0,110,0,40),BackgroundTransparency=1,Font=Enum.Font.Gotham,Text=seasonLabel or "",TextSize=10,TextColor3=DIM,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+
+        local currentRank, currentLb = rankCharm:GetForSeason(seasonCharmName)
+        currentRank = currentRank or "None"
+
+        -- Leaderboard rank textbox
+        local lbBox = mk("TextBox",{AnchorPoint=Vector2.new(1,0.5),Position=UDim2.new(1,-8,0.5,0),Size=UDim2.fromOffset(60,24),BackgroundColor3=OF,Font=Enum.Font.Gotham,Text=currentLb and tostring(currentLb) or "",PlaceholderText="LB#",PlaceholderColor3=DIM,TextSize=11,TextColor3=TX,ClearTextOnFocus=false,Parent=row},{corner2(UDim.new(0,6))})
+
+        -- Rank dropdown
+        local dd
+        dd = makeDropdownAt(row, 0, 0, 110, 24, rankOptions, currentRank, function(opt)
+            if opt == "None" then
+                rankCharm:SetForSeason(seasonCharmName, nil, nil)
+                lbBox.Text = ""
+            else
+                local lb = tonumber(lbBox.Text)
+                rankCharm:SetForSeason(seasonCharmName, opt, lb)
+            end
+        end, 8)
+        -- Reposition dropdown correctly
+        local arrow = dd.GetArrow()
+        arrow.AnchorPoint = Vector2.new(1,0.5)
+        arrow.Position = UDim2.new(1,-78,0.5,0)
+        arrow.Size = UDim2.fromOffset(110,24)
+        local arrowBtn = arrow.Parent:FindFirstChildOfClass("TextButton")
+        if arrowBtn then
+            arrowBtn.AnchorPoint = Vector2.new(1,0.5)
+            arrowBtn.Position = UDim2.new(1,-78,0.5,0)
+            arrowBtn.Size = UDim2.fromOffset(110,24)
+        end
+
+        lbBox.FocusLost:Connect(function()
+            local rankSel = arrow.Text:match("^%s*(.-)%s+v%s*$") or "None"
+            if rankSel == "None" or rankSel == "" then return end
+            local lb = tonumber(lbBox.Text)
+            rankCharm:SetForSeason(seasonCharmName, rankSel, lb)
+        end)
+
+        rows[seasonCharmName] = {dd = dd, lbBox = lbBox, arrow = arrow}
+        return row
+    end
+
+    -- Build rows for every season charm
+    for _, s in ipairs(consts.SeasonCharms) do
+        buildRow(s.CharmName, s.SeasonName and ("Season " .. tostring(s.Version) .. " - " .. tostring(s.SeasonName)) or ("Season " .. tostring(s.Version)))
+    end
+
+    -- Clear all
+    clearBtn.MouseButton1Click:Connect(function()
+        rankCharm:SetAllOverrides({})
+        for name, r in pairs(rows) do
+            r.arrow.Text = "  None  v"
+            r.lbBox.Text = ""
+        end
+    end)
+
+    -- Listen for external changes (e.g. config load)
+    pcall(function()
+        rankCharm.Changed:Connect(function()
+            for name, r in pairs(rows) do
+                local rn, lb = rankCharm:GetForSeason(name)
+                r.arrow.Text = "  "..tostring(rn or "None").."  v"
+                r.lbBox.Text = lb and tostring(lb) or ""
+            end
+        end)
+    end)
+
+    -- drag
+    do
+        local dragging, startIn, startPos = false, nil, nil
+        header.InputBegan:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+                dragging=true; startIn=i.Position; startPos=panel.Position
+                local c; c = i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false; c:Disconnect() end end)
+            end
+        end)
+        UIS2.InputChanged:Connect(function(i)
+            if not dragging then return end
+            if i.UserInputType~=Enum.UserInputType.MouseMovement and i.UserInputType~=Enum.UserInputType.Touch then return end
+            local d = i.Position - startIn
+            panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+d.X, startPos.Y.Scale, startPos.Y.Offset+d.Y)
+        end)
+    end
+
+    closeBtn.MouseButton1Click:Connect(function() gui.Enabled = false end)
+
+    _G.KiciaToggleRankCharmUI = function()
+        gui.Enabled = not gui.Enabled
+    end
+
+    print("[RankCharmUI] loaded. _G.KiciaToggleRankCharmUI() to toggle")
 end)
 
 return _result
