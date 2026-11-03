@@ -494956,6 +494956,19 @@ task.spawn(function()
         local rcGroup = miscTab:AddLeftGroupbox('Rank Charm')
         local rankCharm, consts
 
+        -- Synchronous status label: if this text never appears, the whole
+        -- block failed to build; if it shows "init" but never changes, the
+        -- scan task didn't run.
+        local rcLabel
+        pcall(function()
+            rcLabel = rcGroup:AddLabel('Status: init', true)
+        end)
+        local function rcSet(txt)
+            if rcLabel and rcLabel.SetText then
+                pcall(function() rcLabel:SetText('Status: ' .. txt) end)
+            end
+        end
+
         rcGroup:AddDropdown('IS_RCSeason', { Text = 'Season', Values = {'Loading...'}, Default = 1 })
         rcGroup:AddDropdown('IS_RCRank',   { Text = 'Rank',   Values = {'Off'},        Default = 1 })
         rcGroup:AddInput('IS_RCLb', {
@@ -495008,8 +495021,9 @@ task.spawn(function()
             end,
         })
 
-        -- Show status in the Season dropdown since notifications aren't visible here
+        -- Mirror status into the Season dropdown too
         local function rcStatus(txt)
+            rcSet(txt)
             pcall(function() Options.IS_RCSeason:SetValues({txt}) end)
             pcall(function() Options.IS_RCSeason:SetValue(txt) end)
         end
@@ -495097,6 +495111,7 @@ task.spawn(function()
                 return
             end
 
+            rcSet(("ready - %d seasons"):format(#seasons))
             pcall(function() Options.IS_RCSeason:SetValues(seasons) end)
             pcall(function() Options.IS_RCRank:SetValues(ranks) end)
             pcall(function() Options.IS_RCSeason:SetValue(seasons[1]) end)
