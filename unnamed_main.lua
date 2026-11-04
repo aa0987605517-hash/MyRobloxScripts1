@@ -495231,6 +495231,8 @@ task.spawn(function()
         if Toggles.IS_NoCooldown then
             Toggles.IS_NoCooldown:OnChanged(function(v) pcall(ncApplyNoCooldown, v) end)
         end
+        -- Expose to outer scope so autoload / CharacterAdded can re-apply
+        getgenv().__ncApplyNoCooldown = ncApplyNoCooldown
 
         -- ── Silence weapon sounds (scan sounds in equipped tool/character) ──
         ncMain:AddToggle('IS_MuteWeapon', {
@@ -495300,6 +495302,19 @@ task.spawn(function()
                 if v then mwEnable() else mwDisable() end
             end)
         end
+        getgenv().__ncMuteWeaponEnable  = mwEnable
+        getgenv().__ncMuteWeaponDisable = mwDisable
+
+        -- Re-apply Mute Weapon on character respawn / lobby return (backpack gets replaced)
+        LocalPlayer.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            if Toggles.IS_MuteWeapon and Toggles.IS_MuteWeapon.Value then
+                pcall(mwEnable)
+            end
+            if Toggles.IS_NoCooldown and Toggles.IS_NoCooldown.Value then
+                pcall(ncApplyNoCooldown, true)
+            end
+        end)
 
         local MODE_UE, MODE_KICIA, MODE_SOLIX = "ue counter", "Kicia counter", "Solix counter"
         local RunServiceNC = game:GetService("RunService")
@@ -495457,6 +495472,20 @@ task.spawn(function()
             local sm = getgenv().SaveManager
             if sm and sm.LoadAutoloadConfig then
                 sm:LoadAutoloadConfig()
+            end
+        end)
+        -- After the config loads toggle values, SetValue may be a no-op when
+        -- the stored value equals the current value, so OnChanged won't fire
+        -- and the enable path is skipped. Re-apply here explicitly.
+        task.wait(0.3)
+        pcall(function()
+            if Toggles.IS_NoCooldown and Toggles.IS_NoCooldown.Value and getgenv().__ncApplyNoCooldown then
+                getgenv().__ncApplyNoCooldown(true)
+            end
+        end)
+        pcall(function()
+            if Toggles.IS_MuteWeapon and Toggles.IS_MuteWeapon.Value and getgenv().__ncMuteWeaponEnable then
+                getgenv().__ncMuteWeaponEnable()
             end
         end)
     end)
