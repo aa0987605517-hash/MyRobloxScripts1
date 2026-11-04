@@ -495465,19 +495465,14 @@ task.spawn(function()
         end)
     end)
 
-    -- Re-trigger autoload now that IS_ toggles/inputs exist
+    -- Give the main script's own SaveManager time to finish its initial
+    -- autoload against our IS_ toggles, then re-apply only the handful of
+    -- features whose enable path isn't triggered by SetValue (e.g. values
+    -- that haven't changed don't fire OnChanged).
+    -- Note: do NOT call sm:LoadAutoloadConfig() again - calling it a second
+    -- time after UI is live can destroy our groupbox on some builds.
     task.spawn(function()
-        task.wait(0.5)
-        pcall(function()
-            local sm = getgenv().SaveManager
-            if sm and sm.LoadAutoloadConfig then
-                sm:LoadAutoloadConfig()
-            end
-        end)
-        -- After the config loads toggle values, SetValue may be a no-op when
-        -- the stored value equals the current value, so OnChanged won't fire
-        -- and the enable path is skipped. Re-apply here explicitly.
-        task.wait(0.3)
+        task.wait(1.5)
         pcall(function()
             if Toggles.IS_NoCooldown and Toggles.IS_NoCooldown.Value and getgenv().__ncApplyNoCooldown then
                 getgenv().__ncApplyNoCooldown(true)
