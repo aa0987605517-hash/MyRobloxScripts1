@@ -495245,9 +495245,9 @@ task.spawn(function()
             local oldNc = mt.__namecall
             setreadonly(mt, false)
 
-            local KW = {'fire','shoot','gun','weapon','swing','attack','melee',
-                        'blade','slash','slice','hit','impact','shot','sword',
-                        'knife','axe','spear','bow','rifle','pistol','smg','punch'}
+            -- Gun-only keywords; no melee/animation words like swing/hit/slash/impact
+            local KW = {'fire','shoot','gunshot','muzzle','reload','rifle',
+                        'pistol','smg','sniper','shotgun','revolver'}
 
             mt.__namecall = newcclosure(function(self, ...)
                 if Toggles.IS_MuteWeapon and Toggles.IS_MuteWeapon.Value then
