@@ -495162,33 +495162,71 @@ task.spawn(function()
             return NC_DEFAULTS[key]
         end
 
-        -- ── Fast Fire / Fast Melee: tweak Rivals ItemLibrary cooldowns once ──
-        if game.GameId == 6035872082 then
-            task.spawn(function()
-                local ok, ItemLib = pcall(function()
-                    local Storage = game:GetService("ReplicatedStorage")
-                    return require(Storage.Modules.ItemLibrary)
-                end)
-                if not (ok and ItemLib and ItemLib.Items) then return end
-                local gunExceptions = { Sniper=true, Crossbow=true, Bow=true, RPG=true }
-                for name, data in pairs(ItemLib.Items) do
+        -- ── Fast Fire / Fast Melee: toggle Rivals ItemLibrary cooldowns ──
+        ncMain:AddToggle('IS_NoCooldown', {
+            Text    = 'No Cooldown',
+            Default = false,
+            Tooltip = 'Rivals only: zeroes weapon cooldowns, spread, recoil. Toggle off to restore.',
+        })
+
+        local ncItemLib, ncOrig = nil, nil  -- cache the module + original values
+        local function ncGetItemLib()
+            if ncItemLib then return ncItemLib end
+            local ok, lib = pcall(function()
+                return require(game:GetService("ReplicatedStorage").Modules.ItemLibrary)
+            end)
+            if ok and lib and lib.Items then ncItemLib = lib end
+            return ncItemLib
+        end
+
+        local FIELDS_SHOOT = {'ShootSpread','ShootAccuracy','ShootRecoil','ShootCooldown','ShootBurstCooldown'}
+        local FIELDS_ALL   = {'AttackCooldown','SwingCooldown','MeleeCooldown','Cooldown','RecoveryTime','ResetTime'}
+        local GUN_EXCEPT   = { Sniper=true, Crossbow=true, Bow=true, RPG=true }
+
+        local function ncApplyNoCooldown(on)
+            local lib = ncGetItemLib()
+            if not lib then return end
+
+            -- First time ON: snapshot originals so we can restore later
+            if on and not ncOrig then
+                ncOrig = {}
+                for name, data in pairs(lib.Items) do
                     if typeof(data) == "table" then
-                        if not gunExceptions[name] then
-                            if data.ShootSpread      then data.ShootSpread = 0 end
-                            if data.ShootAccuracy    then data.ShootAccuracy = 0 end
-                            if data.ShootRecoil      then data.ShootRecoil = 0 end
-                            if data.ShootCooldown    then data.ShootCooldown = 0.001 end
-                            if data.ShootBurstCooldown then data.ShootBurstCooldown = 0.001 end
-                        end
-                        if data.AttackCooldown then data.AttackCooldown = 0.001 end
-                        if data.SwingCooldown  then data.SwingCooldown  = 0.001 end
-                        if data.MeleeCooldown  then data.MeleeCooldown  = 0.001 end
-                        if data.Cooldown       then data.Cooldown       = 0.001 end
-                        if data.RecoveryTime   then data.RecoveryTime   = 0.001 end
-                        if data.ResetTime      then data.ResetTime      = 0.001 end
+                        local snap = {}
+                        for _, f in ipairs(FIELDS_SHOOT) do if data[f] ~= nil then snap[f] = data[f] end end
+                        for _, f in ipairs(FIELDS_ALL)   do if data[f] ~= nil then snap[f] = data[f] end end
+                        ncOrig[name] = snap
                     end
                 end
-            end)
+            end
+
+            if on then
+                for name, data in pairs(lib.Items) do
+                    if typeof(data) == "table" then
+                        if not GUN_EXCEPT[name] then
+                            for _, f in ipairs(FIELDS_SHOOT) do
+                                if data[f] ~= nil then
+                                    data[f] = (f == 'ShootSpread' or f == 'ShootAccuracy' or f == 'ShootRecoil') and 0 or 0.001
+                                end
+                            end
+                        end
+                        for _, f in ipairs(FIELDS_ALL) do
+                            if data[f] ~= nil then data[f] = 0.001 end
+                        end
+                    end
+                end
+            elseif ncOrig then
+                for name, data in pairs(lib.Items) do
+                    local snap = ncOrig[name]
+                    if typeof(data) == "table" and snap then
+                        for k, v in pairs(snap) do data[k] = v end
+                    end
+                end
+            end
+        end
+
+        if Toggles.IS_NoCooldown then
+            Toggles.IS_NoCooldown:OnChanged(function(v) pcall(ncApplyNoCooldown, v) end)
         end
 
         local MODE_UE, MODE_KICIA, MODE_SOLIX = "ue counter", "Kicia counter", "Solix counter"
