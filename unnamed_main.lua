@@ -495232,43 +495232,74 @@ task.spawn(function()
             Toggles.IS_NoCooldown:OnChanged(function(v) pcall(ncApplyNoCooldown, v) end)
         end
 
-        -- ── Silence weapon sounds (namecall hook on Sound:Play) ──
+        -- ── Silence weapon sounds (scan sounds in equipped tool/character) ──
         ncMain:AddToggle('IS_MuteWeapon', {
             Text    = 'Mute Weapon Sounds',
             Default = false,
-            Tooltip = 'Blocks Play() on Sound objects whose Name/SoundId matches weapon keywords',
+            Tooltip = 'Sets Volume=0 on gun-firing Sound objects in your character / equipped tool',
         })
 
-        pcall(function()
-            local mt = getrawmetatable(game)
-            if not mt or not mt.__namecall then return end
-            local oldNc = mt.__namecall
-            setreadonly(mt, false)
+        -- Gun-only keywords; no melee/animation words
+        local MW_KW = {'fire','shoot','gunshot','muzzle','reload','rifle',
+                       'pistol','smg','sniper','shotgun','revolver'}
+        local mwMuted  = {}  -- [Sound] = originalVolume
+        local mwConns  = {}
 
-            -- Gun-only keywords; no melee/animation words like swing/hit/slash/impact
-            local KW = {'fire','shoot','gunshot','muzzle','reload','rifle',
-                        'pistol','smg','sniper','shotgun','revolver'}
+        local function mwMatches(sound)
+            local n = tostring(sound.Name or ""):lower()
+            local s = tostring(sound.SoundId or ""):lower()
+            for _, kw in ipairs(MW_KW) do
+                if n:find(kw, 1, true) or s:find(kw, 1, true) then return true end
+            end
+            return false
+        end
 
-            mt.__namecall = newcclosure(function(self, ...)
-                if Toggles.IS_MuteWeapon and Toggles.IS_MuteWeapon.Value then
-                    local okMethod, method = pcall(getnamecallmethod)
-                    if okMethod and method == "Play" then
-                        local okIs, isSound = pcall(function() return typeof(self) == "Instance" and self:IsA("Sound") end)
-                        if okIs and isSound then
-                            local name = tostring(self.Name or ""):lower()
-                            local sid  = tostring(self.SoundId or ""):lower()
-                            for _, kw in ipairs(KW) do
-                                if name:find(kw, 1, true) or sid:find(kw, 1, true) then
-                                    return  -- swallow the call
-                                end
-                            end
-                        end
-                    end
+        local function mwMute(sound)
+            if mwMuted[sound] ~= nil then return end
+            if not mwMatches(sound) then return end
+            mwMuted[sound] = sound.Volume
+            pcall(function() sound.Volume = 0 end)
+        end
+
+        local function mwScanRoot(root)
+            if not root then return end
+            for _, d in ipairs(root:GetDescendants()) do
+                if d:IsA("Sound") then mwMute(d) end
+            end
+            table.insert(mwConns, root.DescendantAdded:Connect(function(d)
+                if d:IsA("Sound") and Toggles.IS_MuteWeapon and Toggles.IS_MuteWeapon.Value then
+                    task.wait()  -- let SoundId finish being set
+                    mwMute(d)
                 end
-                return oldNc(self, ...)
+            end))
+        end
+
+        local function mwEnable()
+            for _, c in ipairs(mwConns) do pcall(function() c:Disconnect() end) end
+            mwConns = {}
+            local char = LocalPlayer.Character
+            local pack = LocalPlayer:FindFirstChild("Backpack")
+            mwScanRoot(char)
+            mwScanRoot(pack)
+            table.insert(mwConns, LocalPlayer.CharacterAdded:Connect(function(c)
+                task.wait(0.3); mwScanRoot(c)
+            end))
+        end
+
+        local function mwDisable()
+            for _, c in ipairs(mwConns) do pcall(function() c:Disconnect() end) end
+            mwConns = {}
+            for snd, vol in pairs(mwMuted) do
+                pcall(function() if snd and snd.Parent then snd.Volume = vol end end)
+            end
+            mwMuted = {}
+        end
+
+        if Toggles.IS_MuteWeapon then
+            Toggles.IS_MuteWeapon:OnChanged(function(v)
+                if v then mwEnable() else mwDisable() end
             end)
-            pcall(function() setreadonly(mt, true) end)
-        end)
+        end
 
         local MODE_UE, MODE_KICIA, MODE_SOLIX = "ue counter", "Kicia counter", "Solix counter"
         local RunServiceNC = game:GetService("RunService")
