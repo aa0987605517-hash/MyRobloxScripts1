@@ -495140,13 +495140,16 @@ task.spawn(function()
         ncMain:AddDropdown('IS_CtrMode',      { Text = 'Counter Mode', Values = {'ue counter','Kicia counter','Solix counter'}, Default = 'ue counter' })
         ncMain:AddToggle('IS_AutoSwing',      { Text = 'Auto Swing',      Default = false, Tooltip = 'Automatically swings your equipped tool/sword' })
         ncMain:AddToggle('IS_AutoEquipMelee', { Text = 'Auto Equip Melee',Default = true,  Tooltip = 'Auto-equip a melee weapon when none is equipped' })
-        ncMain:AddSlider('IS_SwingSpeed',     { Text = 'Swing Speed (ms)',   Default = 100,  Min = 50,  Max = 1000,  Rounding = 0 })
-        ncMain:AddSlider('IS_CtrVoidSpeed',   { Text = 'Void Speed',         Default = 3000, Min = 500, Max = 10000, Rounding = 0 })
-        ncMain:AddSlider('IS_CtrKiciaCycleMs',{ Text = 'Cycle (ms)',         Default = 50,  Min = 10, Max = 500,    Rounding = 0 })
-        ncMain:AddSlider('IS_CtrKiciaFlyMs',  { Text = 'Fly Window (ms)',    Default = 25,  Min = 5,  Max = 250,    Rounding = 0 })
-        ncMain:AddSlider('IS_CtrKiciaBoost',  { Text = 'Boost Force',        Default = 100000, Min = 1000, Max = 500000, Rounding = 0 })
-        ncMain:AddSlider('IS_CtrKiciaFlySpeed',{Text = 'Fly Speed',          Default = 15000, Min = 1000, Max = 50000,  Rounding = 0 })
-        ncMain:AddSlider('IS_CtrKiciaDepth',  { Text = 'Parking Depth',      Default = 6,  Min = 1, Max = 30, Rounding = 0 })
+        ncMain:AddSlider('IS_SwingSpeed',      { Text = 'Swing Speed (ms)',   Default = 100,    Min = 50,   Max = 1000,   Rounding = 0 })
+        ncMain:AddSlider('IS_CtrVoidSpeed',    { Text = 'Void Speed',         Default = 3000,   Min = 500,  Max = 10000,  Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaCycleMs', { Text = 'Cycle (ms)',         Default = 269,    Min = 10,   Max = 500,    Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaFlyMs',   { Text = 'Fly Window (ms)',    Default = 78,     Min = 5,    Max = 250,    Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaBoost',   { Text = 'Boost Force',        Default = 161035, Min = 1000, Max = 500000, Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaFlySpeed',{ Text = 'Fly Speed',          Default = 19770,  Min = 1000, Max = 50000,  Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaZigAmp',  { Text = 'Zigzag Amplitude',   Default = 855,    Min = 0,    Max = 2000,   Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaZigFreq', { Text = 'Zigzag Frequency',   Default = 12.8,   Min = 1,    Max = 30,     Rounding = 1 })
+        ncMain:AddSlider('IS_CtrKiciaDepth',   { Text = 'Parking Depth',      Default = 14,     Min = 1,    Max = 30,     Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaRadius',  { Text = 'Solix Radius',       Default = 47,     Min = 5,    Max = 100,    Rounding = 0 })
 
         -- Shared config getter mapped to Obsidian UI with safe fallback
         local NC_DEFAULTS = {
@@ -495265,7 +495268,7 @@ task.spawn(function()
                 end
                 root.CFrame = CFrame.new(K.stop) * CFrame.Angles(math.pi / 2, 0, 0)
             else
-                local zig = math.cos(t * 8) * 400 * dt
+                local zig = math.cos(t * ncCfg('IS_CtrKiciaZigFreq')) * ncCfg('IS_CtrKiciaZigAmp') * dt
                 K.fly += Vector3.new(zig, ncCfg('IS_CtrKiciaFlySpeed') * dt, 0)
                 root.CFrame = CFrame.new(K.fly) * CFrame.Angles(-math.pi / 2, 0, 0)
             end
