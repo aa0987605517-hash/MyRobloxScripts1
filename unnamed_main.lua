@@ -495465,14 +495465,34 @@ task.spawn(function()
         end)
     end)
 
-    -- Give the main script's own SaveManager time to finish its initial
-    -- autoload against our IS_ toggles, then re-apply only the handful of
-    -- features whose enable path isn't triggered by SetValue (e.g. values
-    -- that haven't changed don't fire OnChanged).
-    -- Note: do NOT call sm:LoadAutoloadConfig() again - calling it a second
-    -- time after UI is live can destroy our groupbox on some builds.
+    -- Autoload only our IS_* values from the saved config file (don't call
+    -- SaveManager:LoadAutoloadConfig, that wipes groupboxes on some builds).
+    -- Reads the same autoload.txt pointer SaveManager uses, then applies
+    -- each saved IS_* entry via the Parser's Load function.
     task.spawn(function()
-        task.wait(1.5)
+        task.wait(1.0)
+        pcall(function()
+            local sm = getgenv().SaveManager
+            if not sm or not sm.Parser then return end
+            local folder = sm.Folder or ''
+            local autoPath = folder .. '/settings/autoload.txt'
+            if not (isfile and isfile(autoPath)) then return end
+            local cfgName = readfile(autoPath)
+            local cfgPath = folder .. '/settings/' .. cfgName .. '.json'
+            if not isfile(cfgPath) then return end
+            local ok, data = pcall(function()
+                return game:GetService("HttpService"):JSONDecode(readfile(cfgPath))
+            end)
+            if not ok or type(data) ~= "table" or type(data.objects) ~= "table" then return end
+            for _, obj in ipairs(data.objects) do
+                if obj and obj.idx and tostring(obj.idx):sub(1, 3) == 'IS_' then
+                    local p = sm.Parser[obj.type]
+                    if p and p.Load then pcall(p.Load, obj.idx, obj) end
+                end
+            end
+        end)
+        -- Re-apply features whose enable path may not fire via SetValue
+        task.wait(0.3)
         pcall(function()
             if Toggles.IS_NoCooldown and Toggles.IS_NoCooldown.Value and getgenv().__ncApplyNoCooldown then
                 getgenv().__ncApplyNoCooldown(true)
