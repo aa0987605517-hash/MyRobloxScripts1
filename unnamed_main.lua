@@ -495127,6 +495127,219 @@ task.spawn(function()
         end)
     end)
 
+    -- === NEBULA COUNTER (ue/Kicia/Solix counter + auto swing) ===
+    pcall(function()
+        -- Find the Main tab; fall back to miscTab
+        local mainTab = miscTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            if tostring(name):lower() == 'main' then mainTab = tab; break end
+        end
+
+        local ncMain = mainTab:AddLeftGroupbox('Nebula Counter')
+        ncMain:AddToggle('IS_CtrOn',          { Text = 'Enable Counter',  Default = false, Tooltip = 'Toggles the counter loop instantly on/off' })
+        ncMain:AddDropdown('IS_CtrMode',      { Text = 'Counter Mode', Values = {'ue counter','Kicia counter','Solix counter'}, Default = 'ue counter' })
+        ncMain:AddToggle('IS_AutoSwing',      { Text = 'Auto Swing',      Default = false, Tooltip = 'Automatically swings your equipped tool/sword' })
+        ncMain:AddToggle('IS_AutoEquipMelee', { Text = 'Auto Equip Melee',Default = true,  Tooltip = 'Auto-equip a melee weapon when none is equipped' })
+        ncMain:AddSlider('IS_SwingSpeed',     { Text = 'Swing Speed (ms)',   Default = 100,  Min = 50,  Max = 1000,  Rounding = 0 })
+        ncMain:AddSlider('IS_CtrVoidSpeed',   { Text = 'Void Speed',         Default = 3000, Min = 500, Max = 10000, Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaCycleMs',{ Text = 'Cycle (ms)',         Default = 50,  Min = 10, Max = 500,    Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaFlyMs',  { Text = 'Fly Window (ms)',    Default = 25,  Min = 5,  Max = 250,    Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaBoost',  { Text = 'Boost Force',        Default = 100000, Min = 1000, Max = 500000, Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaFlySpeed',{Text = 'Fly Speed',          Default = 15000, Min = 1000, Max = 50000,  Rounding = 0 })
+        ncMain:AddSlider('IS_CtrKiciaDepth',  { Text = 'Parking Depth',      Default = 6,  Min = 1, Max = 30, Rounding = 0 })
+
+        -- Shared config getter mapped to Obsidian UI with safe fallback
+        local NC_DEFAULTS = {
+            IS_CtrOn=false, IS_CtrMode='ue counter', IS_AutoSwing=false, IS_AutoEquipMelee=true,
+            IS_SwingSpeed=100, IS_CtrVoidSpeed=3000,
+            IS_CtrKiciaCycleMs=50, IS_CtrKiciaFlyMs=25, IS_CtrKiciaBoost=100000,
+            IS_CtrKiciaFlySpeed=15000, IS_CtrKiciaZigAmp=400, IS_CtrKiciaZigFreq=8,
+            IS_CtrKiciaDepth=6, IS_CtrKiciaRadius=30,
+        }
+        local function ncCfg(key)
+            if Toggles[key] ~= nil then return Toggles[key].Value end
+            if Options[key] ~= nil then return Options[key].Value end
+            return NC_DEFAULTS[key]
+        end
+
+        -- ── Fast Fire / Fast Melee: tweak Rivals ItemLibrary cooldowns once ──
+        if game.GameId == 6035872082 then
+            task.spawn(function()
+                local ok, ItemLib = pcall(function()
+                    local Storage = game:GetService("ReplicatedStorage")
+                    return require(Storage.Modules.ItemLibrary)
+                end)
+                if not (ok and ItemLib and ItemLib.Items) then return end
+                local gunExceptions = { Sniper=true, Crossbow=true, Bow=true, RPG=true }
+                for name, data in pairs(ItemLib.Items) do
+                    if typeof(data) == "table" then
+                        if not gunExceptions[name] then
+                            if data.ShootSpread      then data.ShootSpread = 0 end
+                            if data.ShootAccuracy    then data.ShootAccuracy = 0 end
+                            if data.ShootRecoil      then data.ShootRecoil = 0 end
+                            if data.ShootCooldown    then data.ShootCooldown = 0.001 end
+                            if data.ShootBurstCooldown then data.ShootBurstCooldown = 0.001 end
+                        end
+                        if data.AttackCooldown then data.AttackCooldown = 0.001 end
+                        if data.SwingCooldown  then data.SwingCooldown  = 0.001 end
+                        if data.MeleeCooldown  then data.MeleeCooldown  = 0.001 end
+                        if data.Cooldown       then data.Cooldown       = 0.001 end
+                        if data.RecoveryTime   then data.RecoveryTime   = 0.001 end
+                        if data.ResetTime      then data.ResetTime      = 0.001 end
+                    end
+                end
+            end)
+        end
+
+        local MODE_UE, MODE_KICIA, MODE_SOLIX = "ue counter", "Kicia counter", "Solix counter"
+        local RunServiceNC = game:GetService("RunService")
+        local UIS_NC       = game:GetService("UserInputService")
+
+        -- Shared Kicia/Solix state
+        local K = { t0 = 0, boostAt = 0, fly = Vector3.zero, stop = nil, stopIdx = -1, spawn = nil, list = {}, last = nil }
+
+        local function cycleTimes()
+            local cycle     = math.max(ncCfg('IS_CtrKiciaCycleMs'), 5) / 1000
+            local flyWindow = math.min(ncCfg('IS_CtrKiciaFlyMs') / 1000, cycle * 0.95)
+            return cycle, flyWindow
+        end
+
+        local function resolveStopPos(mode, spawn)
+            return spawn - Vector3.new(0, ncCfg('IS_CtrKiciaDepth'), 0)
+        end
+
+        local function kiciaSolixStep(mode, root, dt)
+            local now = os.clock()
+            local t = now - K.t0
+            local cycle, flyWindow = cycleTimes()
+            local flying = (t % cycle) < flyWindow
+
+            if now >= K.boostAt then
+                if flying then K.fly += Vector3.new(0, ncCfg('IS_CtrKiciaBoost'), 0) end
+                K.boostAt = now + 0.6
+            end
+
+            if not flying then
+                local idx = math.floor(t / cycle)
+                if idx ~= K.stopIdx or not K.stop then
+                    K.stopIdx = idx
+                    K.stop = resolveStopPos(mode, K.spawn)
+                end
+                root.CFrame = CFrame.new(K.stop) * CFrame.Angles(math.pi / 2, 0, 0)
+            else
+                local zig = math.cos(t * 8) * 400 * dt
+                K.fly += Vector3.new(zig, ncCfg('IS_CtrKiciaFlySpeed') * dt, 0)
+                root.CFrame = CFrame.new(K.fly) * CFrame.Angles(-math.pi / 2, 0, 0)
+            end
+            root.AssemblyLinearVelocity = Vector3.zero
+        end
+
+        local function kiciaSolixInit(root, now)
+            K.t0 = now; K.boostAt = now; K.spawn = root.Position; K.fly = root.Position
+            K.stop, K.stopIdx = nil, -1
+        end
+
+        -- UE counter state + into-the-void helpers
+        local UE = { voidState = 2, voidT = 0, lastRandTp = 0 }
+        local function sendToVoid(root)
+            root.CFrame = root.CFrame + Vector3.new(0, 5000, 0)
+        end
+        local function ueStep(now, dt, root)
+            local char = LocalPlayer.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum.PlatformStand = true; hum.WalkSpeed = 0 end) end
+
+            local elapsed = now - UE.voidT
+            if UE.voidState == 1 then
+                if elapsed >= 15 then
+                    UE.voidState, UE.voidT = 2, now
+                else
+                    pcall(function() root.AssemblyLinearVelocity = Vector3.new(0, ncCfg('IS_CtrVoidSpeed'), 0) end)
+                    if now - UE.lastRandTp >= 10 then
+                        UE.lastRandTp = now
+                        pcall(function()
+                            root.CFrame = CFrame.new(root.Position + Vector3.new(
+                                math.random(-2500, 2500), math.random(500, 1200), math.random(-2500, 2500)
+                            )) * CFrame.Angles(-math.pi / 2, 0, 0)
+                        end)
+                    end
+                end
+            else
+                UE.voidState, UE.voidT, UE.lastRandTp = 1, now, now
+            end
+        end
+
+        -- Auto swing (Rivals): uses MechanicsController + fake mouse events
+        local lastSwingTime, lastEquipTime, _cachedMC = 0, 0, nil
+        local function getMC()
+            if _cachedMC then return _cachedMC end
+            local ok, mod = pcall(function() return require(LocalPlayer.PlayerScripts.Controllers.MechanicsController) end)
+            if ok then _cachedMC = mod end
+            return _cachedMC
+        end
+        local fakeDown = { KeyCode=Enum.KeyCode.Unknown, UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.Begin, Position=Vector3.zero, Delta=Vector3.zero, IsModifierKeyDown=function() return false end }
+        local fakeUp   = { KeyCode=Enum.KeyCode.Unknown, UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.End,   Position=Vector3.zero, Delta=Vector3.zero, IsModifierKeyDown=function() return false end }
+        local function fireInputSignal(fakeInput, signal)
+            if type(getconnections) ~= "function" then return end
+            local ok, conns = pcall(getconnections, signal)
+            if not ok then return end
+            for _, conn in ipairs(conns) do pcall(conn.Fire, conn, fakeInput, false) end
+        end
+        local function autoSwingTick(now)
+            if not ncCfg('IS_AutoSwing') then return end
+            local delay = math.max(ncCfg('IS_SwingSpeed') / 1000, 0.05)
+            if now - lastSwingTime < delay then return end
+            lastSwingTime = now
+            local mc = getMC(); local lf = mc and mc.LocalFighter
+            if not lf then return end
+            if not (lf.Items and #lf.Items > 0) then return end
+            if ncCfg('IS_AutoEquipMelee') then
+                local ei = lf.EquippedItem
+                local isMelee = ei and ei.Info and ei.Info.Type == "Melee"
+                if not isMelee and now - lastEquipTime > 0.5 then
+                    lastEquipTime = now
+                    pcall(function() lf:EquipItem(3) end)
+                    return
+                end
+            end
+            fireInputSignal(fakeDown, UIS_NC.InputBegan)
+            task.defer(function() fireInputSignal(fakeUp, UIS_NC.InputEnded) end)
+        end
+
+        -- Main loop
+        local S = { started = false, mode = nil }
+        RunServiceNC.Heartbeat:Connect(function(dt)
+            local now = os.clock()
+            autoSwingTick(now)
+
+            if not ncCfg('IS_CtrOn') then
+                if S.started then S.started = false end
+                return
+            end
+
+            local mode = ncCfg('IS_CtrMode') or MODE_UE
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+
+            if not S.started then
+                S.started, S.mode = true, mode
+                if mode == MODE_KICIA or mode == MODE_SOLIX then kiciaSolixInit(root, now) end
+            end
+            -- restart if mode changed
+            if S.mode and mode ~= S.mode then
+                if mode == MODE_KICIA or mode == MODE_SOLIX then kiciaSolixInit(root, now) end
+                S.mode = mode
+            end
+
+            if mode == MODE_KICIA or mode == MODE_SOLIX then
+                pcall(kiciaSolixStep, mode, root, dt)
+            else
+                pcall(ueStep, now, dt, root)
+            end
+        end)
+    end)
+
     -- Re-trigger autoload now that IS_ toggles/inputs exist
     task.spawn(function()
         task.wait(0.5)
