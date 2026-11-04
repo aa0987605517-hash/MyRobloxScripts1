@@ -495465,33 +495465,58 @@ task.spawn(function()
         end)
     end)
 
-    -- Autoload only our IS_* values from the saved config file (don't call
-    -- SaveManager:LoadAutoloadConfig, that wipes groupboxes on some builds).
-    -- Reads the same autoload.txt pointer SaveManager uses, then applies
-    -- each saved IS_* entry via the Parser's Load function.
+    -- Our own independent IS_* persistence (separate from SaveManager).
+    -- This keeps our values across injections even when SaveManager's
+    -- autoload is toggled, without touching its Parser (which was wiping
+    -- our groupbox on some builds).
     task.spawn(function()
-        task.wait(1.0)
-        pcall(function()
-            local sm = getgenv().SaveManager
-            if not sm or not sm.Parser then return end
-            local folder = sm.Folder or ''
-            local autoPath = folder .. '/settings/autoload.txt'
-            if not (isfile and isfile(autoPath)) then return end
-            local cfgName = readfile(autoPath)
-            local cfgPath = folder .. '/settings/' .. cfgName .. '.json'
-            if not isfile(cfgPath) then return end
-            local ok, data = pcall(function()
-                return game:GetService("HttpService"):JSONDecode(readfile(cfgPath))
-            end)
-            if not ok or type(data) ~= "table" or type(data.objects) ~= "table" then return end
-            for _, obj in ipairs(data.objects) do
-                if obj and obj.idx and tostring(obj.idx):sub(1, 3) == 'IS_' then
-                    local p = sm.Parser[obj.type]
-                    if p and p.Load then pcall(p.Load, obj.idx, obj) end
+        if type(writefile) ~= "function" or type(readfile) ~= "function" or type(isfile) ~= "function" then
+            return  -- executor missing file API
+        end
+        local HttpSvc = game:GetService("HttpService")
+        local SAVE_FILE = "NebulaCounter_IS.json"
+
+        local function saveIS()
+            local data = {}
+            for k, t in pairs(Toggles) do
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(t) == "table" and t.Value ~= nil then
+                    data[k] = { t = "T", v = t.Value }
                 end
             end
-        end)
-        -- Re-apply features whose enable path may not fire via SetValue
+            for k, o in pairs(Options) do
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(o) == "table" and o.Value ~= nil then
+                    data[k] = { t = "O", v = o.Value }
+                end
+            end
+            pcall(function()
+                writefile(SAVE_FILE, HttpSvc:JSONEncode(data))
+            end)
+        end
+
+        local function loadIS()
+            if not isfile(SAVE_FILE) then return end
+            local okR, raw = pcall(readfile, SAVE_FILE)
+            if not okR then return end
+            local okJ, data = pcall(function() return HttpSvc:JSONDecode(raw) end)
+            if not okJ or type(data) ~= "table" then return end
+            for k, entry in pairs(data) do
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(entry) == "table" then
+                    pcall(function()
+                        if entry.t == "T" and Toggles[k] then
+                            Toggles[k]:SetValue(entry.v)
+                        elseif entry.t == "O" and Options[k] then
+                            Options[k]:SetValue(entry.v)
+                        end
+                    end)
+                end
+            end
+        end
+
+        -- Load saved values after UI is fully ready
+        task.wait(1.5)
+        pcall(loadIS)
+
+        -- Re-apply features whose enable path isn't triggered by SetValue
         task.wait(0.3)
         pcall(function()
             if Toggles.IS_NoCooldown and Toggles.IS_NoCooldown.Value and getgenv().__ncApplyNoCooldown then
@@ -495501,6 +495526,13 @@ task.spawn(function()
         pcall(function()
             if Toggles.IS_MuteWeapon and Toggles.IS_MuteWeapon.Value and getgenv().__ncMuteWeaponEnable then
                 getgenv().__ncMuteWeaponEnable()
+            end
+        end)
+
+        -- Periodic save every 3 seconds (debounced; cheap since just a json write)
+        task.spawn(function()
+            while task.wait(3) do
+                pcall(saveIS)
             end
         end)
     end)
