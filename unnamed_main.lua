@@ -495061,6 +495061,7 @@ task.spawn(function()
         ncMain:AddToggle('IS_CtrOn',          { Text = 'Enable Counter',  Default = false, Tooltip = 'Toggles the counter loop instantly on/off' })
         ncMain:AddDropdown('IS_CtrMode',      { Text = 'Counter Mode', Values = {'ue counter','Kicia counter','Solix counter'}, Default = 'ue counter' })
         ncMain:AddToggle('IS_AutoSwing',      { Text = 'Auto Swing',      Default = false, Tooltip = 'Rapid StartShooting via FighterController + UseItem remote (Rivals) with Tool:Activate fallback' })
+        ncMain:AddToggle('IS_AutoEquipMelee', { Text = 'Auto Equip Melee',Default = true,  Tooltip = 'Auto-equip a melee weapon (slot 3) when none is equipped' })
         ncMain:AddSlider('IS_SwingSpeed',      { Text = 'Swing Speed (ms)',   Default = 10,     Min = 10,   Max = 1000,   Rounding = 0 })
         ncMain:AddSlider('IS_CtrVoidSpeed',    { Text = 'Void Speed',         Default = 3000,   Min = 500,  Max = 10000,  Rounding = 0 })
         ncMain:AddSlider('IS_CtrKiciaCycleMs', { Text = 'Cycle (ms)',         Default = 269,    Min = 10,   Max = 500,    Rounding = 0 })
@@ -495074,7 +495075,7 @@ task.spawn(function()
 
         -- Shared config getter mapped to Obsidian UI with safe fallback
         local NC_DEFAULTS = {
-            IS_CtrOn=false, IS_CtrMode='ue counter', IS_AutoSwing=false,
+            IS_CtrOn=false, IS_CtrMode='ue counter', IS_AutoSwing=false, IS_AutoEquipMelee=true,
             IS_SwingSpeed=100, IS_CtrVoidSpeed=3000,
             IS_CtrKiciaCycleMs=50, IS_CtrKiciaFlyMs=25, IS_CtrKiciaBoost=100000,
             IS_CtrKiciaFlySpeed=15000, IS_CtrKiciaZigAmp=400, IS_CtrKiciaZigFreq=8,
@@ -495379,11 +495380,28 @@ task.spawn(function()
             end
         end
 
+        local lastEquipTime = 0
         local function autoSwingTick(now)
             if not ncCfg('IS_AutoSwing') then return end
             local delay = math.max(ncCfg('IS_SwingSpeed') / 1000, 0.01)
             if now - lastSwingTime < delay then return end
             lastSwingTime = now
+
+            -- Auto-equip a melee weapon (slot 3) if none is held (Rivals only)
+            if isRivalsNC and ncCfg('IS_AutoEquipMelee') and now - lastEquipTime > 0.5 then
+                local fc = getFC()
+                local lf = fc and fc.LocalFighter
+                if lf and lf.Items and #lf.Items > 0 then
+                    local ei = lf.EquippedItem
+                    local isMelee = ei and ei.Info and ei.Info.Type == "Melee"
+                    if not isMelee then
+                        lastEquipTime = now
+                        pcall(function() lf:EquipItem(3) end)
+                        return
+                    end
+                end
+            end
+
             performSwing()
         end
 
