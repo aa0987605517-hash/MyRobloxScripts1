@@ -495060,9 +495060,8 @@ task.spawn(function()
         local ncMain = mainTab:AddLeftGroupbox('Nebula Counter')
         ncMain:AddToggle('IS_CtrOn',          { Text = 'Enable Counter',  Default = false, Tooltip = 'Toggles the counter loop instantly on/off' })
         ncMain:AddDropdown('IS_CtrMode',      { Text = 'Counter Mode', Values = {'ue counter','Kicia counter','Solix counter'}, Default = 'ue counter' })
-        ncMain:AddToggle('IS_AutoSwing',      { Text = 'Auto Swing',      Default = false, Tooltip = 'Automatically swings your equipped tool/sword' })
-        ncMain:AddToggle('IS_AutoEquipMelee', { Text = 'Auto Equip Melee',Default = true,  Tooltip = 'Auto-equip a melee weapon when none is equipped' })
-        ncMain:AddSlider('IS_SwingSpeed',      { Text = 'Swing Speed (ms)',   Default = 100,    Min = 50,   Max = 1000,   Rounding = 0 })
+        ncMain:AddToggle('IS_AutoSwing',      { Text = 'Auto Swing',      Default = false, Tooltip = 'Rapid StartShooting via FighterController + UseItem remote (Rivals) with Tool:Activate fallback' })
+        ncMain:AddSlider('IS_SwingSpeed',      { Text = 'Swing Speed (ms)',   Default = 10,     Min = 10,   Max = 1000,   Rounding = 0 })
         ncMain:AddSlider('IS_CtrVoidSpeed',    { Text = 'Void Speed',         Default = 3000,   Min = 500,  Max = 10000,  Rounding = 0 })
         ncMain:AddSlider('IS_CtrKiciaCycleMs', { Text = 'Cycle (ms)',         Default = 269,    Min = 10,   Max = 500,    Rounding = 0 })
         ncMain:AddSlider('IS_CtrKiciaFlyMs',   { Text = 'Fly Window (ms)',    Default = 78,     Min = 5,    Max = 250,    Rounding = 0 })
@@ -495075,7 +495074,7 @@ task.spawn(function()
 
         -- Shared config getter mapped to Obsidian UI with safe fallback
         local NC_DEFAULTS = {
-            IS_CtrOn=false, IS_CtrMode='ue counter', IS_AutoSwing=false, IS_AutoEquipMelee=true,
+            IS_CtrOn=false, IS_CtrMode='ue counter', IS_AutoSwing=false,
             IS_SwingSpeed=100, IS_CtrVoidSpeed=3000,
             IS_CtrKiciaCycleMs=50, IS_CtrKiciaFlyMs=25, IS_CtrKiciaBoost=100000,
             IS_CtrKiciaFlySpeed=15000, IS_CtrKiciaZigAmp=400, IS_CtrKiciaZigFreq=8,
@@ -495316,41 +495315,76 @@ task.spawn(function()
             end
         end
 
-        -- Auto swing (Rivals): uses MechanicsController + fake mouse events
-        local lastSwingTime, lastEquipTime, _cachedMC = 0, 0, nil
-        local function getMC()
-            if _cachedMC then return _cachedMC end
-            local ok, mod = pcall(function() return require(LocalPlayer.PlayerScripts.Controllers.MechanicsController) end)
-            if ok then _cachedMC = mod end
-            return _cachedMC
+        -- Auto swing (Rivals): FighterController.StartShooting + UseItem remote
+        -- with Tool:Activate fallback for non-Rivals games.
+        local ReplicatedStorageNC = game:GetService("ReplicatedStorage")
+        local isRivalsNC = game.GameId == 6035872082
+        local _enumLibrary = nil
+        local _fighterController = nil
+        local lastSwingTime = 0
+
+        -- Load EnumLibrary once for the StartShooting enum (Rivals only)
+        if isRivalsNC then
+            task.spawn(function()
+                pcall(function()
+                    _enumLibrary = require(ReplicatedStorageNC.Modules.EnumLibrary)
+                end)
+            end)
         end
-        local fakeDown = { KeyCode=Enum.KeyCode.Unknown, UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.Begin, Position=Vector3.zero, Delta=Vector3.zero, IsModifierKeyDown=function() return false end }
-        local fakeUp   = { KeyCode=Enum.KeyCode.Unknown, UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.End,   Position=Vector3.zero, Delta=Vector3.zero, IsModifierKeyDown=function() return false end }
-        local function fireInputSignal(fakeInput, signal)
-            if type(getconnections) ~= "function" then return end
-            local ok, conns = pcall(getconnections, signal)
-            if not ok then return end
-            for _, conn in ipairs(conns) do pcall(conn.Fire, conn, fakeInput, false) end
+
+        local function getFC()
+            if _fighterController then return _fighterController end
+            local ok, fc = pcall(function()
+                return require(LocalPlayer.PlayerScripts.Controllers.FighterController)
+            end)
+            if ok then _fighterController = fc end
+            return _fighterController
         end
-        local function autoSwingTick(now)
-            if not ncCfg('IS_AutoSwing') then return end
-            local delay = math.max(ncCfg('IS_SwingSpeed') / 1000, 0.05)
-            if now - lastSwingTime < delay then return end
-            lastSwingTime = now
-            local mc = getMC(); local lf = mc and mc.LocalFighter
-            if not lf then return end
-            if not (lf.Items and #lf.Items > 0) then return end
-            if ncCfg('IS_AutoEquipMelee') then
-                local ei = lf.EquippedItem
-                local isMelee = ei and ei.Info and ei.Info.Type == "Melee"
-                if not isMelee and now - lastEquipTime > 0.5 then
-                    lastEquipTime = now
-                    pcall(function() lf:EquipItem(3) end)
-                    return
+
+        local function runAsGameScript(fn)
+            local oldId = (getthreadidentity and getthreadidentity()) or 8
+            if setthreadidentity then pcall(setthreadidentity, 2) end
+            local ok, res = pcall(fn)
+            if setthreadidentity then pcall(setthreadidentity, oldId) end
+            return ok, res
+        end
+
+        local function performSwing()
+            if isRivalsNC then
+                local fc = getFC()
+                local lf = fc and fc.LocalFighter
+                if lf then
+                    local item = lf.EquippedItem
+                    if item and typeof(item) == "table" then
+                        if item.StartShooting then
+                            runAsGameScript(function() item:StartShooting() end)
+                        end
+                        pcall(function()
+                            local camData = nil
+                            pcall(function() camData = lf:GetCameraData() end)
+                            local shootEnum = _enumLibrary and _enumLibrary:ToEnum("StartShooting") or "\x1A"
+                            ReplicatedStorageNC.Remotes.Replication.Fighter.UseItem:FireServer(
+                                item:Get("ObjectID"), shootEnum, camData, nil
+                            )
+                        end)
+                        runAsGameScript(function() lf:Input("StartShooting") end)
+                    end
                 end
             end
-            fireInputSignal(fakeDown, UIS_NC.InputBegan)
-            task.defer(function() fireInputSignal(fakeUp, UIS_NC.InputEnded) end)
+            -- Fallback: directly activate equipped Tool
+            local char = LocalPlayer.Character
+            if char then
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then pcall(function() tool:Activate() end) end
+            end
+        end
+
+        local function autoSwingTick(now)
+            if not ncCfg('IS_AutoSwing') then return end
+            local delay = math.max(ncCfg('IS_SwingSpeed') / 1000, 0.01)
+            if now - lastSwingTime < delay then return end
+            lastSwingTime = now
+            performSwing()
         end
 
         -- Main loop
