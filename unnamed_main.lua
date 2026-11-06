@@ -495583,15 +495583,47 @@ task.spawn(function()
             bgGroup:AddToggle('IS_BgEnabled', { Text = 'Enable Background', Default = false })
         end)
 
-        -- Find the biggest Frame inside ScreenGui - that's the main window
+        -- Locate the script window Frame (the draggable main panel), not the
+        -- full-screen ScreenGui root. Strategy: find the title TextLabel
+        -- "Unnamed enhancement- discord.gg/enhancements" and walk up to the
+        -- nearest Frame whose AbsoluteSize is well under the viewport.
         local function findMainFrame()
             if not lib.ScreenGui then return nil end
+            local screenSize = lib.ScreenGui.AbsoluteSize
+            local titleLabel = nil
+            for _, d in ipairs(lib.ScreenGui:GetDescendants()) do
+                if d:IsA("TextLabel") and tostring(d.Text):find("Unnamed enhancement", 1, true) then
+                    titleLabel = d
+                    break
+                end
+            end
+            if titleLabel then
+                -- Walk up parents, picking the outermost Frame that is still
+                -- smaller than the viewport (the script window, not the root).
+                local node = titleLabel.Parent
+                local candidate = nil
+                while node and node ~= lib.ScreenGui do
+                    if node:IsA("Frame") then
+                        local sz = node.AbsoluteSize
+                        if sz.X < screenSize.X * 0.9 and sz.Y < screenSize.Y * 0.9
+                            and sz.X > 300 and sz.Y > 200 then
+                            candidate = node
+                        end
+                    end
+                    node = node.Parent
+                end
+                if candidate then return candidate end
+            end
+            -- Fallback: biggest Frame whose size is <90% of viewport
             local bestFrame, bestArea = nil, 0
             for _, d in ipairs(lib.ScreenGui:GetDescendants()) do
-                if d:IsA("Frame") and d.Visible and d.Size.X.Offset > 200 and d.Size.Y.Offset > 200 then
-                    local area = d.Size.X.Offset * d.Size.Y.Offset
-                    if area > bestArea then
-                        bestFrame, bestArea = d, area
+                if d:IsA("Frame") and d.Visible then
+                    local sz = d.AbsoluteSize
+                    if sz.X > 300 and sz.Y > 200 and sz.X < screenSize.X * 0.9 and sz.Y < screenSize.Y * 0.9 then
+                        local area = sz.X * sz.Y
+                        if area > bestArea then
+                            bestFrame, bestArea = d, area
+                        end
                     end
                 end
             end
