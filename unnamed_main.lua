@@ -495826,10 +495826,21 @@ task.spawn(function()
                    and math.abs(a.G - b.G) < 0.02
                    and math.abs(a.B - b.B) < 0.02
             end
-            local function isPanelBg(d)
-                if colorsEq(d.BackgroundColor3, mainC) then return true end
-                if colorsEq(d.BackgroundColor3, bgColorC) then return true end
+            local function hasFrameChild(d)
+                for _, c in ipairs(d:GetChildren()) do
+                    if c:IsA("Frame") or c:IsA("ScrollingFrame") then return true end
+                end
                 return false
+            end
+            local function isPanelBg(d)
+                -- Must match a theme panel color
+                if not (colorsEq(d.BackgroundColor3, mainC) or colorsEq(d.BackgroundColor3, bgColorC)) then
+                    return false
+                end
+                -- Must be a container (has at least one Frame child), not a
+                -- leaf widget indicator like a toggle box or slider fill
+                if not hasFrameChild(d) then return false end
+                return true
             end
             if innerT > 0 then
                 for _, d in ipairs(parent:GetDescendants()) do
