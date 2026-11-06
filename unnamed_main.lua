@@ -495653,6 +495653,8 @@ task.spawn(function()
         end
 
         local bgImage = nil  -- ImageLabel instance
+        local bgParent = nil
+        local bgOrigBackgroundTransparency = nil  -- remember to restore on disable
 
         -- Local filename -> executor asset URL via getcustomasset. Returns "" if
         -- the executor can't serve local files.
@@ -495704,6 +495706,11 @@ task.spawn(function()
             local enabled = Toggles.IS_BgEnabled and Toggles.IS_BgEnabled.Value
             if not enabled then
                 if bgImage then pcall(function() bgImage:Destroy() end); bgImage = nil end
+                -- Restore the main frame's original background opacity
+                if bgParent and bgOrigBackgroundTransparency ~= nil then
+                    pcall(function() bgParent.BackgroundTransparency = bgOrigBackgroundTransparency end)
+                end
+                bgParent, bgOrigBackgroundTransparency = nil, nil
                 return
             end
             local parent = findMainFrame()
@@ -495723,6 +495730,18 @@ task.spawn(function()
             elseif bgImage.Parent ~= parent then
                 bgImage.Parent = parent
             end
+            -- The main frame's own BackgroundColor renders on top of the image
+            -- (the image is drawn above the parent's own background). Set it
+            -- transparent so our image actually shows. Save the old value so
+            -- we can restore it when the toggle is turned off.
+            if bgParent ~= parent then
+                if bgParent and bgOrigBackgroundTransparency ~= nil then
+                    pcall(function() bgParent.BackgroundTransparency = bgOrigBackgroundTransparency end)
+                end
+                bgParent = parent
+                bgOrigBackgroundTransparency = parent.BackgroundTransparency
+            end
+            pcall(function() parent.BackgroundTransparency = 1 end)
             -- Prefer the local-file dropdown selection; fall back to text input
             local id, source = "", "input"
             local pick = Options.IS_BgLocalFile and Options.IS_BgLocalFile.Value
