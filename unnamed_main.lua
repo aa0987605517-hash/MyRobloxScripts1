@@ -495655,6 +495655,7 @@ task.spawn(function()
         local bgImage = nil  -- ImageLabel instance
         local bgParent = nil
         local bgOrigBackgroundTransparency = nil  -- remember to restore on disable
+        local bgHiddenFrames = {}  -- [Frame] = originalTransparency, for children we forced transparent
 
         -- Local filename -> executor asset URL via getcustomasset. Returns "" if
         -- the executor can't serve local files.
@@ -495702,14 +495703,23 @@ task.spawn(function()
             pcall(function() lib:Notify("[BG] " .. tostring(msg), sec or 4) end)
         end
 
+        local function restoreHiddenFrames()
+            for frame, t in pairs(bgHiddenFrames) do
+                pcall(function()
+                    if frame and frame.Parent then frame.BackgroundTransparency = t end
+                end)
+            end
+            bgHiddenFrames = {}
+        end
+
         local function applyBG()
             local enabled = Toggles.IS_BgEnabled and Toggles.IS_BgEnabled.Value
             if not enabled then
                 if bgImage then pcall(function() bgImage:Destroy() end); bgImage = nil end
-                -- Restore the main frame's original background opacity
                 if bgParent and bgOrigBackgroundTransparency ~= nil then
                     pcall(function() bgParent.BackgroundTransparency = bgOrigBackgroundTransparency end)
                 end
+                restoreHiddenFrames()
                 bgParent, bgOrigBackgroundTransparency = nil, nil
                 return
             end
@@ -495777,6 +495787,23 @@ task.spawn(function()
                 notifyBG("applied (" .. source .. ") to " .. parent:GetFullName(), 3)
             else
                 notifyBG("set image failed (invalid URL?)", 5)
+            end
+
+            -- Clear previous passes so repeated applies don't leave stale entries
+            restoreHiddenFrames()
+
+            -- Walk Frame descendants and hide ones large enough to be covering
+            -- the image. "Large" = AbsoluteSize at least 60% of the parent.
+            local parentSize = parent.AbsoluteSize
+            local minPx = parentSize.X * parentSize.Y * 0.36  -- 60% * 60%
+            for _, d in ipairs(parent:GetDescendants()) do
+                if d ~= bgImage and d:IsA("Frame") and d.BackgroundTransparency < 1 then
+                    local sz = d.AbsoluteSize
+                    if sz.X * sz.Y >= minPx then
+                        bgHiddenFrames[d] = d.BackgroundTransparency
+                        pcall(function() d.BackgroundTransparency = 1 end)
+                    end
+                end
             end
         end
         bgCtx.applyBG = applyBG  -- expose for the Apply Now debug button
