@@ -495837,10 +495837,13 @@ task.spawn(function()
                 if not (colorsEq(d.BackgroundColor3, mainC) or colorsEq(d.BackgroundColor3, bgColorC)) then
                     return false
                 end
-                -- Must be a container (has at least one Frame child), not a
-                -- leaf widget indicator like a toggle box or slider fill
-                if not hasFrameChild(d) then return false end
-                return true
+                -- Keep a size floor so toggle indicators (typically 13-20px
+                -- square) and slider fills (thin bars) stay opaque, but
+                -- bigger frames like title bars / tab bars count as panels
+                -- even without Frame children.
+                local sz = d.AbsoluteSize
+                if hasFrameChild(d) then return true end
+                return sz.X >= 50 and sz.Y >= 22
             end
             if innerT > 0 then
                 for _, d in ipairs(parent:GetDescendants()) do
