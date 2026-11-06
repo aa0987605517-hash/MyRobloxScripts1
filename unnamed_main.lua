@@ -495573,6 +495573,12 @@ task.spawn(function()
             })
         end)
         pcall(function()
+            bgGroup:AddSlider('IS_BgInnerT', {
+                Text = 'Inner UI Transparency', Default = 1, Min = 0, Max = 1, Rounding = 2,
+                Tooltip = '0 = inner panels fully opaque (image hidden), 1 = panels fully transparent (image shows most)',
+            })
+        end)
+        pcall(function()
             bgGroup:AddDropdown('IS_BgScaleType', {
                 Text = 'Scale Mode',
                 Values = { 'Stretch', 'Fit', 'Crop', 'Tile' },
@@ -495792,23 +495798,24 @@ task.spawn(function()
             -- Clear previous passes so repeated applies don't leave stale entries
             restoreHiddenFrames()
 
-            -- Walk Frame descendants and hide ones large enough to be covering
-            -- the image. "Large" = AbsoluteSize at least 60% of the parent.
-            local parentSize = parent.AbsoluteSize
-            local minPx = parentSize.X * parentSize.Y * 0.36  -- 60% * 60%
-            for _, d in ipairs(parent:GetDescendants()) do
-                if d ~= bgImage and d:IsA("Frame") and d.BackgroundTransparency < 1 then
-                    local sz = d.AbsoluteSize
-                    if sz.X * sz.Y >= minPx then
-                        bgHiddenFrames[d] = d.BackgroundTransparency
-                        pcall(function() d.BackgroundTransparency = 1 end)
+            -- Lerp every opaque Frame descendant's BackgroundTransparency up
+            -- toward 1 by the user-controlled Inner UI Transparency slider.
+            -- 0 = leave panels as-is, 1 = make all panels fully transparent.
+            local innerT = (Options.IS_BgInnerT and Options.IS_BgInnerT.Value) or 1
+            if innerT > 0 then
+                for _, d in ipairs(parent:GetDescendants()) do
+                    if d ~= bgImage and d:IsA("Frame") and d.BackgroundTransparency < 1 then
+                        local orig = d.BackgroundTransparency
+                        local target = orig + (1 - orig) * innerT
+                        bgHiddenFrames[d] = orig
+                        pcall(function() d.BackgroundTransparency = target end)
                     end
                 end
             end
         end
         bgCtx.applyBG = applyBG  -- expose for the Apply Now debug button
 
-        for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgScaleType'}) do
+        for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgInnerT','IS_BgScaleType'}) do
             pcall(function()
                 local target = Toggles[name] or Options[name]
                 if target and target.OnChanged then
