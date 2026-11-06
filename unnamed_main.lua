@@ -494376,27 +494376,31 @@ task.spawn(function()
             task.defer(function() replaceThumbIn(obj) end)
         end)
 
-        -- Safety-net rescan for images whose Image property changes after creation.
-        -- DescendantAdded above already covers newly created ones, so this can be
-        -- infrequent: a full PlayerGui walk is expensive in Rivals.
-        local scanClock = 0
-        thumbConns[2] = RunService.Heartbeat:Connect(function(dt)
-            scanClock = scanClock + dt
-            if scanClock < 1 then return end
-            scanClock = 0
-            pcall(function()
-                local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                if not sid then return end
-                local s = tostring(sid)
-                for _, obj in ipairs(playerGui:GetDescendants()) do
-                    if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-                        local img = obj.Image
-                        if type(img) == "string" and string.find(img, myIdStr, 1, true) then
-                            obj.Image = string.gsub(img, myIdStr, s)
+        -- Safety-net rescan in its own thread with a long sleep between
+        -- walks so the Rivals PlayerGui (thousands of descendants) doesn't
+        -- stutter the frame. DescendantAdded above handles the common path.
+        -- Also yields inside the loop to spread the work across frames.
+        thumbConns[2] = task.spawn(function()
+            while thumbSpoofActive do
+                task.wait(8)
+                if not thumbSpoofActive then break end
+                pcall(function()
+                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if not sid then return end
+                    local s = tostring(sid)
+                    local n = 0
+                    for _, obj in ipairs(playerGui:GetDescendants()) do
+                        n = n + 1
+                        if n % 400 == 0 then task.wait() end  -- yield every ~400 objects
+                        if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                            local img = obj.Image
+                            if type(img) == "string" and string.find(img, myIdStr, 1, true) then
+                                obj.Image = string.gsub(img, myIdStr, s)
+                            end
                         end
                     end
-                end
-            end)
+                end)
+            end
         end)
     end
 
