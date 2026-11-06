@@ -495582,6 +495582,28 @@ task.spawn(function()
         pcall(function()
             bgGroup:AddToggle('IS_BgEnabled', { Text = 'Enable Background', Default = false })
         end)
+        -- Container so Func closure can reach applyBG even though applyBG is
+        -- declared later in this same pcall block (Lua local scoping)
+        local bgCtx = {}
+        pcall(function()
+            bgGroup:AddButton({
+                Text = 'Apply Now (debug)',
+                Func = function()
+                    pcall(function() lib:Notify("[BG] Apply Now pressed", 3) end)
+                    if type(bgCtx.applyBG) ~= "function" then
+                        pcall(function() lib:Notify("[BG] applyBG not ready yet", 4) end)
+                        return
+                    end
+                    local oldToggle = Toggles.IS_BgEnabled
+                    Toggles.IS_BgEnabled = { Value = true }
+                    local ok, err = pcall(bgCtx.applyBG)
+                    Toggles.IS_BgEnabled = oldToggle
+                    if not ok then
+                        pcall(function() lib:Notify("[BG] errored: " .. tostring(err), 6) end)
+                    end
+                end,
+            })
+        end)
 
         -- Locate the script window Frame (the draggable main panel), not the
         -- full-screen ScreenGui root. Strategy: find the title TextLabel
@@ -495738,6 +495760,7 @@ task.spawn(function()
                 notifyBG("set image failed (invalid URL?)", 5)
             end
         end
+        bgCtx.applyBG = applyBG  -- expose for the Apply Now debug button
 
         for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgScaleType'}) do
             pcall(function()
