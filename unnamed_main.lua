@@ -495531,46 +495531,57 @@ task.spawn(function()
             end
         end)
 
-        bgGroup:AddInput('IS_BgImageId', {
-            Text = 'Image ID / URL / Filename',
-            Default = '',
-            Placeholder = 'id, URL, or local filename like bg.png',
-            Numeric = false,
-            ClearTextOnFocus = false,
-        })
-        bgGroup:AddDropdown('IS_BgLocalFile', {
-            Text = 'Local File (' .. BG_FOLDER .. '/)',
-            Values = { '(none)' },
-            Default = '(none)',
-        })
-        bgGroup:AddButton({
-            Text = 'Refresh file list',
-            Func = function()
-                local files = { '(none)' }
-                pcall(function()
-                    if type(listfiles) == "function" then
-                        for _, p in ipairs(listfiles(BG_FOLDER)) do
-                            local name = p:match("([^/\\]+)$") or p
-                            local ext = name:lower():match("%.([^.]+)$")
-                            if ext == "png" or ext == "jpg" or ext == "jpeg" or ext == "webp" or ext == "bmp" then
-                                table.insert(files, name)
+        pcall(function()
+            bgGroup:AddInput('IS_BgImageId', {
+                Text = 'Image ID / URL / Filename',
+                Default = '',
+                Placeholder = 'id, URL, or local filename like bg.png',
+                Numeric = false,
+            })
+        end)
+        pcall(function()
+            bgGroup:AddDropdown('IS_BgLocalFile', {
+                Text = 'Local File (' .. BG_FOLDER .. '/)',
+                Values = { '(none)' },
+                Default = '(none)',
+            })
+        end)
+        pcall(function()
+            bgGroup:AddButton({
+                Text = 'Refresh file list',
+                Func = function()
+                    local files = { '(none)' }
+                    pcall(function()
+                        if type(listfiles) == "function" then
+                            for _, p in ipairs(listfiles(BG_FOLDER)) do
+                                local name = p:match("([^/\\]+)$") or p
+                                local ext = name:lower():match("%.([^.]+)$")
+                                if ext == "png" or ext == "jpg" or ext == "jpeg" or ext == "webp" or ext == "bmp" then
+                                    table.insert(files, name)
+                                end
                             end
                         end
-                    end
-                end)
-                pcall(function() Options.IS_BgLocalFile:SetValues(files) end)
-                lib:Notify(("[BG] %d file(s) in %s/"):format(#files - 1, BG_FOLDER), 3)
-            end,
-        })
-        bgGroup:AddSlider('IS_BgTransparency', {
-            Text = 'Image Transparency', Default = 0.3, Min = 0, Max = 1, Rounding = 2,
-        })
-        bgGroup:AddDropdown('IS_BgScaleType', {
-            Text = 'Scale Mode',
-            Values = { 'Stretch', 'Fit', 'Crop', 'Tile' },
-            Default = 'Stretch',
-        })
-        bgGroup:AddToggle('IS_BgEnabled', { Text = 'Enable Background', Default = false })
+                    end)
+                    pcall(function() Options.IS_BgLocalFile:SetValues(files) end)
+                    lib:Notify(("[BG] %d file(s) in %s/"):format(#files - 1, BG_FOLDER), 3)
+                end,
+            })
+        end)
+        pcall(function()
+            bgGroup:AddSlider('IS_BgTransparency', {
+                Text = 'Image Transparency', Default = 0.3, Min = 0, Max = 1, Rounding = 2,
+            })
+        end)
+        pcall(function()
+            bgGroup:AddDropdown('IS_BgScaleType', {
+                Text = 'Scale Mode',
+                Values = { 'Stretch', 'Fit', 'Crop', 'Tile' },
+                Default = 'Stretch',
+            })
+        end)
+        pcall(function()
+            bgGroup:AddToggle('IS_BgEnabled', { Text = 'Enable Background', Default = false })
+        end)
 
         -- Find the biggest Frame inside ScreenGui - that's the main window
         local function findMainFrame()
