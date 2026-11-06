@@ -495521,12 +495521,44 @@ task.spawn(function()
 
         local bgGroup = settingsTab:AddLeftGroupbox('Custom Background')
 
+        -- Create the local images folder (user drops PNG/JPG files here)
+        local BG_FOLDER = "IS_Backgrounds"
+        pcall(function()
+            if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(BG_FOLDER) then
+                makefolder(BG_FOLDER)
+            end
+        end)
+
         bgGroup:AddInput('IS_BgImageId', {
-            Text = 'Image ID / URL',
+            Text = 'Image ID / URL / Filename',
             Default = '',
-            Placeholder = 'rbxassetid://... or 123456789',
+            Placeholder = 'id, URL, or local filename like bg.png',
             Numeric = false,
             ClearTextOnFocus = false,
+        })
+        bgGroup:AddDropdown('IS_BgLocalFile', {
+            Text = 'Local File (' .. BG_FOLDER .. '/)',
+            Values = { '(none)' },
+            Default = '(none)',
+        })
+        bgGroup:AddButton({
+            Text = 'Refresh file list',
+            Func = function()
+                local files = { '(none)' }
+                pcall(function()
+                    if type(listfiles) == "function" then
+                        for _, p in ipairs(listfiles(BG_FOLDER)) do
+                            local name = p:match("([^/\\]+)$") or p
+                            local ext = name:lower():match("%.([^.]+)$")
+                            if ext == "png" or ext == "jpg" or ext == "jpeg" or ext == "webp" or ext == "bmp" then
+                                table.insert(files, name)
+                            end
+                        end
+                    end
+                end)
+                pcall(function() Options.IS_BgLocalFile:SetValues(files) end)
+                lib:Notify(("[BG] %d file(s) in %s/"):format(#files - 1, BG_FOLDER), 3)
+            end,
         })
         bgGroup:AddSlider('IS_BgTransparency', {
             Text = 'Image Transparency', Default = 0.3, Min = 0, Max = 1, Rounding = 2,
@@ -495555,12 +495587,35 @@ task.spawn(function()
 
         local bgImage = nil  -- ImageLabel instance
 
+        -- Local filename -> executor asset URL via getcustomasset. Returns "" if
+        -- the executor can't serve local files.
+        local function localAsset(fname)
+            if not fname or fname == "" or fname == "(none)" then return "" end
+            local path = BG_FOLDER .. "/" .. fname
+            if type(isfile) == "function" then
+                local okE, exists = pcall(isfile, path)
+                if not (okE and exists) then return "" end
+            end
+            local getter = getcustomasset or (syn and syn.getcustomasset)
+                or (getgenv and getgenv().getcustomasset)
+            if type(getter) ~= "function" then return "" end
+            local ok, url = pcall(getter, path)
+            if ok and type(url) == "string" then return url end
+            return ""
+        end
+
         local function normalizeId(raw)
             raw = tostring(raw or ""):gsub("^%s+",""):gsub("%s+$","")
             if raw == "" then return "" end
             if raw:find("^rbxassetid://") then return raw end
+            if raw:find("^rbxasset://") or raw:find("^rbxthumb://") then return raw end
             if raw:find("^https?://") then return raw end
             if raw:find("^%d+$") then return "rbxassetid://" .. raw end
+            -- If it looks like a local file (has an image extension), treat as such
+            local ext = raw:lower():match("%.([^.]+)$")
+            if ext == "png" or ext == "jpg" or ext == "jpeg" or ext == "webp" or ext == "bmp" then
+                return localAsset(raw)
+            end
             return raw
         end
 
@@ -495591,7 +495646,15 @@ task.spawn(function()
             elseif bgImage.Parent ~= parent then
                 bgImage.Parent = parent
             end
-            local id = normalizeId(Options.IS_BgImageId and Options.IS_BgImageId.Value or "")
+            -- Prefer the local-file dropdown selection; fall back to text input
+            local id = ""
+            local pick = Options.IS_BgLocalFile and Options.IS_BgLocalFile.Value
+            if pick and pick ~= "" and pick ~= "(none)" then
+                id = localAsset(pick)
+            end
+            if id == "" then
+                id = normalizeId(Options.IS_BgImageId and Options.IS_BgImageId.Value or "")
+            end
             local tr = (Options.IS_BgTransparency and Options.IS_BgTransparency.Value) or 0.3
             local scl = (Options.IS_BgScaleType and Options.IS_BgScaleType.Value) or "Stretch"
             pcall(function()
@@ -495602,7 +495665,7 @@ task.spawn(function()
             end)
         end
 
-        for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgTransparency','IS_BgScaleType'}) do
+        for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgScaleType'}) do
             pcall(function()
                 local target = Toggles[name] or Options[name]
                 if target and target.OnChanged then
