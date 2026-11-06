@@ -495523,8 +495523,8 @@ task.spawn(function()
 
         -- Local images folder (user drops PNG/JPG files here).
         -- Path is relative to executor workspace root, e.g.
-        -- C:\Users\<you>\AppData\Local\<executor>\workspace\kiciarebuild
-        local BG_FOLDER = "kiciarebuild"
+        -- C:\Users\<you>\AppData\Local\<executor>\workspace\unnamed
+        local BG_FOLDER = "unnamed"
         pcall(function()
             if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(BG_FOLDER) then
                 makefolder(BG_FOLDER)
