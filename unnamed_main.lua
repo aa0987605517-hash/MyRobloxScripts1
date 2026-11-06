@@ -495521,8 +495521,10 @@ task.spawn(function()
 
         local bgGroup = settingsTab:AddLeftGroupbox('Custom Background')
 
-        -- Create the local images folder (user drops PNG/JPG files here)
-        local BG_FOLDER = "IS_Backgrounds"
+        -- Local images folder (user drops PNG/JPG files here).
+        -- Path is relative to executor workspace root, e.g.
+        -- C:\Users\<you>\AppData\Local\<executor>\workspace\kiciarebuild
+        local BG_FOLDER = "kiciarebuild"
         pcall(function()
             if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(BG_FOLDER) then
                 makefolder(BG_FOLDER)
