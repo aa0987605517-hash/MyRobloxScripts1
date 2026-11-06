@@ -495931,22 +495931,28 @@ task.spawn(function()
 
             -- Lerp opaque container Frames' BackgroundTransparency up toward 1
             -- by the user-controlled Inner UI Transparency slider.
-            -- Skip small widget indicators (slider fills, toggle checkboxes,
-            -- color pickers, keybind buttons) by requiring a minimum size.
+            -- Only touch Frames whose background color matches the theme's
+            -- MainColor or BackgroundColor (i.e. actual panel backgrounds).
+            -- This leaves widget indicators (sliders, toggles, color pickers,
+            -- keybind buttons, outlines, accents) completely untouched.
             local innerT = (Options.IS_BgInnerT and Options.IS_BgInnerT.Value) or 1
-            local accentC = lib.AccentColor
-            local function isWidgetIndicator(d)
-                local sz = d.AbsoluteSize
-                -- Small frames = widget indicators, leave alone
-                if sz.X < 60 or sz.Y < 24 then return true end
-                -- Accent-colored = active toggle / slider fill / active indicator
-                if accentC and d.BackgroundColor3 == accentC then return true end
+            local mainC = lib.MainColor
+            local bgColorC = lib.BackgroundColor
+            local function colorsEq(a, b)
+                if not a or not b then return false end
+                return math.abs(a.R - b.R) < 0.02
+                   and math.abs(a.G - b.G) < 0.02
+                   and math.abs(a.B - b.B) < 0.02
+            end
+            local function isPanelBg(d)
+                if colorsEq(d.BackgroundColor3, mainC) then return true end
+                if colorsEq(d.BackgroundColor3, bgColorC) then return true end
                 return false
             end
             if innerT > 0 then
                 for _, d in ipairs(parent:GetDescendants()) do
                     if d ~= bgImage and d:IsA("Frame") and d.BackgroundTransparency < 1
-                        and not isWidgetIndicator(d) then
+                        and isPanelBg(d) then
                         local orig = d.BackgroundTransparency
                         local target = orig + (1 - orig) * innerT
                         bgHiddenFrames[d] = orig
