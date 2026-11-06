@@ -495826,6 +495826,7 @@ task.spawn(function()
                    and math.abs(a.G - b.G) < 0.02
                    and math.abs(a.B - b.B) < 0.02
             end
+            local accentC = lib.AccentColor
             local function hasFrameChild(d)
                 for _, c in ipairs(d:GetChildren()) do
                     if c:IsA("Frame") or c:IsA("ScrollingFrame") then return true end
@@ -495833,17 +495834,20 @@ task.spawn(function()
                 return false
             end
             local function isPanelBg(d)
-                -- Must match a theme panel color
-                if not (colorsEq(d.BackgroundColor3, mainC) or colorsEq(d.BackgroundColor3, bgColorC)) then
-                    return false
-                end
-                -- Keep a size floor so toggle indicators (typically 13-20px
-                -- square) and slider fills (thin bars) stay opaque, but
-                -- bigger frames like title bars / tab bars count as panels
-                -- even without Frame children.
+                -- Never touch accent-colored frames (active toggles, slider
+                -- fills, accent indicators)
+                if colorsEq(d.BackgroundColor3, accentC) then return false end
                 local sz = d.AbsoluteSize
+                -- Area-based filter: toggle indicators ~225px^2,
+                -- slider fills ~1200-2000px^2, keybind buttons ~800-1500px^2.
+                -- Anything >= 2500 px^2 (e.g. 50x50, 100x25, 200x13) and with
+                -- either dimension >= 25px is a panel/title/tab.
+                local area = sz.X * sz.Y
+                if area < 2500 then return false end
+                if sz.X < 25 or sz.Y < 18 then return false end
+                -- Containers always count
                 if hasFrameChild(d) then return true end
-                return sz.X >= 50 and sz.Y >= 22
+                return true
             end
             if innerT > 0 then
                 for _, d in ipairs(parent:GetDescendants()) do
