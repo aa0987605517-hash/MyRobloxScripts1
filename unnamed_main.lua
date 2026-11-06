@@ -495671,6 +495671,13 @@ task.spawn(function()
             return Enum.ScaleType.Stretch
         end
 
+        local lastBgNotify = 0
+        local function notifyBG(msg, sec)
+            if tick() - lastBgNotify < 0.4 then return end
+            lastBgNotify = tick()
+            pcall(function() lib:Notify("[BG] " .. tostring(msg), sec or 4) end)
+        end
+
         local function applyBG()
             local enabled = Toggles.IS_BgEnabled and Toggles.IS_BgEnabled.Value
             if not enabled then
@@ -495678,7 +495685,10 @@ task.spawn(function()
                 return
             end
             local parent = findMainFrame()
-            if not parent then return end
+            if not parent then
+                notifyBG("script window frame not found", 4)
+                return
+            end
             if not bgImage or not bgImage.Parent then
                 bgImage = Instance.new("ImageLabel")
                 bgImage.Name = "IS_BgImage"
@@ -495692,22 +495702,41 @@ task.spawn(function()
                 bgImage.Parent = parent
             end
             -- Prefer the local-file dropdown selection; fall back to text input
-            local id = ""
+            local id, source = "", "input"
             local pick = Options.IS_BgLocalFile and Options.IS_BgLocalFile.Value
             if pick and pick ~= "" and pick ~= "(none)" then
                 id = localAsset(pick)
+                source = "local:" .. pick
+                if id == "" then
+                    local hasGetter = type(getcustomasset) == "function"
+                        or (syn and type(syn.getcustomasset) == "function")
+                    if not hasGetter then
+                        notifyBG("executor has no getcustomasset - can't use local files", 6)
+                    else
+                        notifyBG("getcustomasset returned empty for '" .. pick .. "' - check file path", 5)
+                    end
+                end
             end
             if id == "" then
                 id = normalizeId(Options.IS_BgImageId and Options.IS_BgImageId.Value or "")
             end
+            if id == "" then
+                notifyBG("no image chosen - pick a file in Local File or type an ID", 5)
+                return
+            end
             local tr = (Options.IS_BgTransparency and Options.IS_BgTransparency.Value) or 0.3
             local scl = (Options.IS_BgScaleType and Options.IS_BgScaleType.Value) or "Stretch"
-            pcall(function()
+            local okSet = pcall(function()
                 bgImage.Image = id
                 bgImage.ImageTransparency = tr
                 bgImage.ScaleType = scaleTypeToEnum(scl)
                 if scl == "Tile" then bgImage.TileSize = UDim2.new(0, 128, 0, 128) end
             end)
+            if okSet then
+                notifyBG("applied (" .. source .. ") to " .. parent:GetFullName(), 3)
+            else
+                notifyBG("set image failed (invalid URL?)", 5)
+            end
         end
 
         for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgScaleType'}) do
