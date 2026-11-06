@@ -495579,6 +495579,12 @@ task.spawn(function()
             })
         end)
         pcall(function()
+            bgGroup:AddSlider('IS_BgBrightness', {
+                Text = 'Image Brightness', Default = 1, Min = 0, Max = 1, Rounding = 2,
+                Tooltip = '1 = original image, 0 = fully black (darken the image)',
+            })
+        end)
+        pcall(function()
             bgGroup:AddDropdown('IS_BgScaleType', {
                 Text = 'Scale Mode',
                 Values = { 'Stretch', 'Fit', 'Crop', 'Tile' },
@@ -495783,9 +495789,11 @@ task.spawn(function()
             end
             local tr = (Options.IS_BgTransparency and Options.IS_BgTransparency.Value) or 0.3
             local scl = (Options.IS_BgScaleType and Options.IS_BgScaleType.Value) or "Stretch"
+            local brightness = (Options.IS_BgBrightness and Options.IS_BgBrightness.Value) or 1
             local okSet = pcall(function()
                 bgImage.Image = id
                 bgImage.ImageTransparency = tr
+                bgImage.ImageColor3 = Color3.new(brightness, brightness, brightness)
                 bgImage.ScaleType = scaleTypeToEnum(scl)
                 if scl == "Tile" then bgImage.TileSize = UDim2.new(0, 128, 0, 128) end
             end)
@@ -495815,7 +495823,7 @@ task.spawn(function()
         end
         bgCtx.applyBG = applyBG  -- expose for the Apply Now debug button
 
-        for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgInnerT','IS_BgScaleType'}) do
+        for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgInnerT','IS_BgBrightness','IS_BgScaleType'}) do
             pcall(function()
                 local target = Toggles[name] or Options[name]
                 if target and target.OnChanged then
