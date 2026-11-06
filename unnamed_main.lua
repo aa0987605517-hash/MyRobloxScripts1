@@ -495510,6 +495510,119 @@ task.spawn(function()
             end
         end)
     end)
+
+    -- === CUSTOM BACKGROUND (in Settings tab) ===
+    pcall(function()
+        local settingsTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            if tostring(name):lower() == 'settings' then settingsTab = tab; break end
+        end
+        if not settingsTab then return end
+
+        local bgGroup = settingsTab:AddLeftGroupbox('Custom Background')
+
+        bgGroup:AddInput('IS_BgImageId', {
+            Text = 'Image ID / URL',
+            Default = '',
+            Placeholder = 'rbxassetid://... or 123456789',
+            Numeric = false,
+            ClearTextOnFocus = false,
+        })
+        bgGroup:AddSlider('IS_BgTransparency', {
+            Text = 'Image Transparency', Default = 0.3, Min = 0, Max = 1, Rounding = 2,
+        })
+        bgGroup:AddDropdown('IS_BgScaleType', {
+            Text = 'Scale Mode',
+            Values = { 'Stretch', 'Fit', 'Crop', 'Tile' },
+            Default = 'Stretch',
+        })
+        bgGroup:AddToggle('IS_BgEnabled', { Text = 'Enable Background', Default = false })
+
+        -- Find the biggest Frame inside ScreenGui - that's the main window
+        local function findMainFrame()
+            if not lib.ScreenGui then return nil end
+            local bestFrame, bestArea = nil, 0
+            for _, d in ipairs(lib.ScreenGui:GetDescendants()) do
+                if d:IsA("Frame") and d.Visible and d.Size.X.Offset > 200 and d.Size.Y.Offset > 200 then
+                    local area = d.Size.X.Offset * d.Size.Y.Offset
+                    if area > bestArea then
+                        bestFrame, bestArea = d, area
+                    end
+                end
+            end
+            return bestFrame
+        end
+
+        local bgImage = nil  -- ImageLabel instance
+
+        local function normalizeId(raw)
+            raw = tostring(raw or ""):gsub("^%s+",""):gsub("%s+$","")
+            if raw == "" then return "" end
+            if raw:find("^rbxassetid://") then return raw end
+            if raw:find("^https?://") then return raw end
+            if raw:find("^%d+$") then return "rbxassetid://" .. raw end
+            return raw
+        end
+
+        local function scaleTypeToEnum(name)
+            if name == "Fit"     then return Enum.ScaleType.Fit end
+            if name == "Crop"    then return Enum.ScaleType.Crop end
+            if name == "Tile"    then return Enum.ScaleType.Tile end
+            return Enum.ScaleType.Stretch
+        end
+
+        local function applyBG()
+            local enabled = Toggles.IS_BgEnabled and Toggles.IS_BgEnabled.Value
+            if not enabled then
+                if bgImage then pcall(function() bgImage:Destroy() end); bgImage = nil end
+                return
+            end
+            local parent = findMainFrame()
+            if not parent then return end
+            if not bgImage or not bgImage.Parent then
+                bgImage = Instance.new("ImageLabel")
+                bgImage.Name = "IS_BgImage"
+                bgImage.Size = UDim2.fromScale(1, 1)
+                bgImage.Position = UDim2.new()
+                bgImage.BackgroundTransparency = 1
+                bgImage.BorderSizePixel = 0
+                bgImage.ZIndex = 0
+                bgImage.Parent = parent
+            elseif bgImage.Parent ~= parent then
+                bgImage.Parent = parent
+            end
+            local id = normalizeId(Options.IS_BgImageId and Options.IS_BgImageId.Value or "")
+            local tr = (Options.IS_BgTransparency and Options.IS_BgTransparency.Value) or 0.3
+            local scl = (Options.IS_BgScaleType and Options.IS_BgScaleType.Value) or "Stretch"
+            pcall(function()
+                bgImage.Image = id
+                bgImage.ImageTransparency = tr
+                bgImage.ScaleType = scaleTypeToEnum(scl)
+                if scl == "Tile" then bgImage.TileSize = UDim2.new(0, 128, 0, 128) end
+            end)
+        end
+
+        for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgTransparency','IS_BgScaleType'}) do
+            pcall(function()
+                local target = Toggles[name] or Options[name]
+                if target and target.OnChanged then
+                    target:OnChanged(function() pcall(applyBG) end)
+                end
+            end)
+        end
+
+        -- Initial apply after a moment so saved values can load
+        task.spawn(function()
+            task.wait(2)
+            pcall(applyBG)
+            -- Re-attach if the main frame rebuilds (e.g. theme change recreates it)
+            while task.wait(3) do
+                if Toggles.IS_BgEnabled and Toggles.IS_BgEnabled.Value then
+                    if not bgImage or not bgImage.Parent then pcall(applyBG) end
+                end
+            end
+        end)
+    end)
 end)
 
 return _result
