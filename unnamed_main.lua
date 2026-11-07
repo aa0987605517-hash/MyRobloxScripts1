@@ -495664,6 +495664,34 @@ task.spawn(function()
             })
         end)
 
+        -- Auto-save on any setting change (debounced ~0.4s so dragging a
+        -- slider doesn't spam disk writes)
+        local bgSaveScheduled = false
+        local function scheduleBgSave()
+            if bgSaveScheduled then return end
+            bgSaveScheduled = true
+            task.delay(0.4, function()
+                bgSaveScheduled = false
+                if type(writefile) ~= "function" then return end
+                local data = {}
+                for _, k in ipairs(BG_KEYS) do
+                    local o = Toggles[k] or Options[k]
+                    if o and o.Value ~= nil then data[k] = o.Value end
+                end
+                pcall(function()
+                    writefile(BG_SAVE, game:GetService("HttpService"):JSONEncode(data))
+                end)
+            end)
+        end
+        for _, k in ipairs(BG_KEYS) do
+            pcall(function()
+                local target = Toggles[k] or Options[k]
+                if target and target.OnChanged then
+                    target:OnChanged(function() scheduleBgSave() end)
+                end
+            end)
+        end
+
         -- Auto-load on startup (after the UI is populated)
         task.spawn(function()
             task.wait(2)
