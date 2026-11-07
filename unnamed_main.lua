@@ -495599,6 +495599,91 @@ task.spawn(function()
             bgGroup:AddToggle('IS_BgEnabled', { Text = 'Enable Background', Default = false })
         end)
 
+        -- Dedicated BG save (separate from SaveManager configs)
+        local BG_SAVE = "unnamed/bg_saved.json"
+        local BG_KEYS = {
+            'IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgInnerT',
+            'IS_BgBrightness','IS_BgScaleType','IS_BgEnabled',
+        }
+        pcall(function()
+            bgGroup:AddButton({
+                Text = 'Save BG',
+                Func = function()
+                    if type(writefile) ~= "function" then
+                        pcall(function() lib:Notify("[BG] executor has no writefile", 4) end)
+                        return
+                    end
+                    local data = {}
+                    for _, k in ipairs(BG_KEYS) do
+                        local o = Toggles[k] or Options[k]
+                        if o and o.Value ~= nil then data[k] = o.Value end
+                    end
+                    local ok, err = pcall(function()
+                        writefile(BG_SAVE, game:GetService("HttpService"):JSONEncode(data))
+                    end)
+                    if ok then
+                        pcall(function() lib:Notify("[BG] saved to " .. BG_SAVE, 3) end)
+                    else
+                        pcall(function() lib:Notify("[BG] save failed: " .. tostring(err), 5) end)
+                    end
+                end,
+            })
+        end)
+        pcall(function()
+            bgGroup:AddButton({
+                Text = 'Load BG',
+                Func = function()
+                    if type(readfile) ~= "function" or type(isfile) ~= "function" then
+                        pcall(function() lib:Notify("[BG] executor has no readfile", 4) end)
+                        return
+                    end
+                    if not isfile(BG_SAVE) then
+                        pcall(function() lib:Notify("[BG] no saved file yet; press Save BG first", 4) end)
+                        return
+                    end
+                    local okR, raw = pcall(readfile, BG_SAVE)
+                    if not okR then return end
+                    local okJ, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
+                    if not okJ or type(data) ~= "table" then
+                        pcall(function() lib:Notify("[BG] saved file corrupt", 4) end)
+                        return
+                    end
+                    local n = 0
+                    for _, k in ipairs(BG_KEYS) do
+                        local v = data[k]
+                        if v ~= nil then
+                            pcall(function()
+                                if Toggles[k] then Toggles[k]:SetValue(v)
+                                elseif Options[k] then Options[k]:SetValue(v) end
+                            end)
+                            n = n + 1
+                        end
+                    end
+                    pcall(function() lib:Notify(("[BG] loaded %d values"):format(n), 3) end)
+                end,
+            })
+        end)
+
+        -- Auto-load on startup (after the UI is populated)
+        task.spawn(function()
+            task.wait(2)
+            pcall(function()
+                if type(isfile) ~= "function" or not isfile(BG_SAVE) then return end
+                local raw = readfile(BG_SAVE)
+                local ok, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
+                if not ok or type(data) ~= "table" then return end
+                for _, k in ipairs(BG_KEYS) do
+                    local v = data[k]
+                    if v ~= nil then
+                        pcall(function()
+                            if Toggles[k] then Toggles[k]:SetValue(v)
+                            elseif Options[k] then Options[k]:SetValue(v) end
+                        end)
+                    end
+                end
+            end)
+        end)
+
         -- Container so Func closure can reach applyBG even though applyBG is
         -- declared later in this same pcall block (Lua local scoping)
         local bgCtx = {}
