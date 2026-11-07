@@ -495456,14 +495456,13 @@ task.spawn(function()
 
         local function saveIS()
             local data = {}
-            -- IS_Bg* live in bg_saved.json only
             for k, t in pairs(Toggles) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and k:sub(1, 5) ~= "IS_Bg" and type(t) == "table" and t.Value ~= nil then
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(t) == "table" and t.Value ~= nil then
                     data[k] = { t = "T", v = t.Value }
                 end
             end
             for k, o in pairs(Options) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and k:sub(1, 5) ~= "IS_Bg" and type(o) == "table" and o.Value ~= nil then
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(o) == "table" and o.Value ~= nil then
                     data[k] = { t = "O", v = o.Value }
                 end
             end
@@ -495479,7 +495478,7 @@ task.spawn(function()
             local okJ, data = pcall(function() return HttpSvc:JSONDecode(raw) end)
             if not okJ or type(data) ~= "table" then return end
             for k, entry in pairs(data) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and k:sub(1, 5) ~= "IS_Bg" and type(entry) == "table" then
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(entry) == "table" then
                     pcall(function()
                         if entry.t == "T" and Toggles[k] then
                             Toggles[k]:SetValue(entry.v)
@@ -495536,6 +495535,22 @@ task.spawn(function()
             end
         end)
 
+        local function listBgFiles()
+            local files = { '(none)' }
+            pcall(function()
+                if type(listfiles) == "function" then
+                    for _, p in ipairs(listfiles(BG_FOLDER)) do
+                        local name = p:match("([^/\\]+)$") or p
+                        local ext = name:lower():match("%.([^.]+)$")
+                        if ext == "png" or ext == "jpg" or ext == "jpeg" or ext == "webp" or ext == "bmp" then
+                            table.insert(files, name)
+                        end
+                    end
+                end
+            end)
+            return files
+        end
+
         pcall(function()
             bgGroup:AddInput('IS_BgImageId', {
                 Text = 'Image ID / URL / Filename',
@@ -495545,9 +495560,11 @@ task.spawn(function()
             })
         end)
         pcall(function()
+            -- Fill the list at startup: a saved filename can only be restored
+            -- if it is already one of the dropdown's values.
             bgGroup:AddDropdown('IS_BgLocalFile', {
                 Text = 'Local File (' .. BG_FOLDER .. '/)',
-                Values = { '(none)' },
+                Values = listBgFiles(),
                 Default = '(none)',
             })
         end)
@@ -495555,18 +495572,7 @@ task.spawn(function()
             bgGroup:AddButton({
                 Text = 'Refresh file list',
                 Func = function()
-                    local files = { '(none)' }
-                    pcall(function()
-                        if type(listfiles) == "function" then
-                            for _, p in ipairs(listfiles(BG_FOLDER)) do
-                                local name = p:match("([^/\\]+)$") or p
-                                local ext = name:lower():match("%.([^.]+)$")
-                                if ext == "png" or ext == "jpg" or ext == "jpeg" or ext == "webp" or ext == "bmp" then
-                                    table.insert(files, name)
-                                end
-                            end
-                        end
-                    end)
+                    local files = listBgFiles()
                     pcall(function() Options.IS_BgLocalFile:SetValues(files) end)
                     lib:Notify(("[BG] %d file(s) in %s/"):format(#files - 1, BG_FOLDER), 3)
                 end,
@@ -495687,55 +495693,6 @@ task.spawn(function()
                     end
                 end
             end
-        end)
-
-        -- Debounced autosave. Only enabled AFTER the autoload below finishes
-        -- so the initial OnChanged (fires immediately at registration with
-        -- the current/default value) doesn't overwrite the saved file with
-        -- defaults before autoload gets a chance to restore it.
-        local bgSaveScheduled = false
-        local bgAutoSaveReady = false
-        local function scheduleBgSave()
-            if not bgAutoSaveReady then return end
-            if bgSaveScheduled then return end
-            bgSaveScheduled = true
-            task.delay(0.4, function()
-                bgSaveScheduled = false
-                if type(writefile) ~= "function" then return end
-                local data = {}
-                for _, k in ipairs(BG_KEYS) do
-                    local o = Toggles[k] or Options[k]
-                    if o and o.Value ~= nil then data[k] = o.Value end
-                end
-                pcall(function()
-                    writefile(BG_SAVE, game:GetService("HttpService"):JSONEncode(data))
-                end)
-            end)
-        end
-
-        -- Load first, then enable autosave and wire OnChanged
-        task.spawn(function()
-            task.wait(2)
-            pcall(function()
-                if type(isfile) == "function" and isfile(BG_SAVE) then
-                    local raw = readfile(BG_SAVE)
-                    local ok, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
-                    if ok and type(data) == "table" then
-                        for _, k in ipairs(BG_KEYS) do
-                            local v = data[k]
-                            if v ~= nil then
-                                pcall(function()
-                                    if Toggles[k] then Toggles[k]:SetValue(v)
-                                    elseif Options[k] then Options[k]:SetValue(v) end
-                                end)
-                            end
-                        end
-                    end
-                end
-            end)
-            -- Now safe to autosave on future changes (the OnChanged callbacks
-            -- registered further down call scheduleBgSave)
-            bgAutoSaveReady = true
         end)
 
         -- Container so Func closure can reach applyBG even though applyBG is
@@ -496009,10 +495966,7 @@ task.spawn(function()
                     -- One combined callback: sliders/dropdowns/inputs keep only
                     -- a single OnChanged callback, so a second registration
                     -- would replace this one.
-                    target:OnChanged(function()
-                        pcall(applyBG)
-                        pcall(scheduleBgSave)
-                    end)
+                    target:OnChanged(function() pcall(applyBG) end)
                 end
             end)
         end
