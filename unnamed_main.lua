@@ -495664,10 +495664,14 @@ task.spawn(function()
             })
         end)
 
-        -- Auto-save on any setting change (debounced ~0.4s so dragging a
-        -- slider doesn't spam disk writes)
+        -- Debounced autosave. Only enabled AFTER the autoload below finishes
+        -- so the initial OnChanged (fires immediately at registration with
+        -- the current/default value) doesn't overwrite the saved file with
+        -- defaults before autoload gets a chance to restore it.
         local bgSaveScheduled = false
+        local bgAutoSaveReady = false
         local function scheduleBgSave()
+            if not bgAutoSaveReady then return end
             if bgSaveScheduled then return end
             bgSaveScheduled = true
             task.delay(0.4, function()
@@ -495683,33 +495687,37 @@ task.spawn(function()
                 end)
             end)
         end
-        for _, k in ipairs(BG_KEYS) do
-            pcall(function()
-                local target = Toggles[k] or Options[k]
-                if target and target.OnChanged then
-                    target:OnChanged(function() scheduleBgSave() end)
-                end
-            end)
-        end
 
-        -- Auto-load on startup (after the UI is populated)
+        -- Load first, then enable autosave and wire OnChanged
         task.spawn(function()
             task.wait(2)
             pcall(function()
-                if type(isfile) ~= "function" or not isfile(BG_SAVE) then return end
-                local raw = readfile(BG_SAVE)
-                local ok, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
-                if not ok or type(data) ~= "table" then return end
-                for _, k in ipairs(BG_KEYS) do
-                    local v = data[k]
-                    if v ~= nil then
-                        pcall(function()
-                            if Toggles[k] then Toggles[k]:SetValue(v)
-                            elseif Options[k] then Options[k]:SetValue(v) end
-                        end)
+                if type(isfile) == "function" and isfile(BG_SAVE) then
+                    local raw = readfile(BG_SAVE)
+                    local ok, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
+                    if ok and type(data) == "table" then
+                        for _, k in ipairs(BG_KEYS) do
+                            local v = data[k]
+                            if v ~= nil then
+                                pcall(function()
+                                    if Toggles[k] then Toggles[k]:SetValue(v)
+                                    elseif Options[k] then Options[k]:SetValue(v) end
+                                end)
+                            end
+                        end
                     end
                 end
             end)
+            -- Now safe to autosave on future changes
+            bgAutoSaveReady = true
+            for _, k in ipairs(BG_KEYS) do
+                pcall(function()
+                    local target = Toggles[k] or Options[k]
+                    if target and target.OnChanged then
+                        target:OnChanged(function() scheduleBgSave() end)
+                    end
+                end)
+            end
         end)
 
         -- Container so Func closure can reach applyBG even though applyBG is
