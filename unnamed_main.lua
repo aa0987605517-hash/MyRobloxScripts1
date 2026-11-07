@@ -495456,13 +495456,14 @@ task.spawn(function()
 
         local function saveIS()
             local data = {}
+            -- IS_Bg* live in bg_saved.json only
             for k, t in pairs(Toggles) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(t) == "table" and t.Value ~= nil then
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and k:sub(1, 5) ~= "IS_Bg" and type(t) == "table" and t.Value ~= nil then
                     data[k] = { t = "T", v = t.Value }
                 end
             end
             for k, o in pairs(Options) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(o) == "table" and o.Value ~= nil then
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and k:sub(1, 5) ~= "IS_Bg" and type(o) == "table" and o.Value ~= nil then
                     data[k] = { t = "O", v = o.Value }
                 end
             end
@@ -495478,7 +495479,7 @@ task.spawn(function()
             local okJ, data = pcall(function() return HttpSvc:JSONDecode(raw) end)
             if not okJ or type(data) ~= "table" then return end
             for k, entry in pairs(data) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(entry) == "table" then
+                if type(k) == "string" and k:sub(1, 3) == "IS_" and k:sub(1, 5) ~= "IS_Bg" and type(entry) == "table" then
                     pcall(function()
                         if entry.t == "T" and Toggles[k] then
                             Toggles[k]:SetValue(entry.v)
@@ -495664,6 +495665,30 @@ task.spawn(function()
             })
         end)
 
+        -- bg_saved.json is the only source of truth for IS_Bg* values.
+        -- Keep SaveManager configs (e.g. an autoloaded "legit" config holding
+        -- old values) from saving or loading them, so they can't overwrite
+        -- the user's changes on every injection.
+        pcall(function()
+            local sm = getgenv().SaveManager
+            if not sm then return end
+            if type(sm.Ignore) == "table" then
+                for _, k in ipairs(BG_KEYS) do sm.Ignore[k] = true end
+            end
+            if type(sm.Parser) == "table" then
+                for _, p in pairs(sm.Parser) do
+                    if type(p) == "table" and type(p.Load) == "function" and not p.__bgWrapped then
+                        local origLoad = p.Load
+                        p.Load = function(idx, ...)
+                            if type(idx) == "string" and idx:sub(1, 5) == "IS_Bg" then return end
+                            return origLoad(idx, ...)
+                        end
+                        p.__bgWrapped = true
+                    end
+                end
+            end
+        end)
+
         -- Debounced autosave. Only enabled AFTER the autoload below finishes
         -- so the initial OnChanged (fires immediately at registration with
         -- the current/default value) doesn't overwrite the saved file with
@@ -495708,16 +495733,9 @@ task.spawn(function()
                     end
                 end
             end)
-            -- Now safe to autosave on future changes
+            -- Now safe to autosave on future changes (the OnChanged callbacks
+            -- registered further down call scheduleBgSave)
             bgAutoSaveReady = true
-            for _, k in ipairs(BG_KEYS) do
-                pcall(function()
-                    local target = Toggles[k] or Options[k]
-                    if target and target.OnChanged then
-                        target:OnChanged(function() scheduleBgSave() end)
-                    end
-                end)
-            end
         end)
 
         -- Container so Func closure can reach applyBG even though applyBG is
@@ -495988,7 +496006,13 @@ task.spawn(function()
             pcall(function()
                 local target = Toggles[name] or Options[name]
                 if target and target.OnChanged then
-                    target:OnChanged(function() pcall(applyBG) end)
+                    -- One combined callback: sliders/dropdowns/inputs keep only
+                    -- a single OnChanged callback, so a second registration
+                    -- would replace this one.
+                    target:OnChanged(function()
+                        pcall(applyBG)
+                        pcall(scheduleBgSave)
+                    end)
                 end
             end)
         end
