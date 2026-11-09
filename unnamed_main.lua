@@ -494987,13 +494987,17 @@ task.spawn(function()
             -- the client never freezes. getgc(true) can hold hundreds of
             -- thousands of objects, so we must NOT re-fetch + rescan in a loop.
             local function scanOnce()
+                -- Shared lock: never run two full getgc scans at once
+                local env = getgenv()
+                while env.__IS_gcBusy do task.wait(0.5) end
+                env.__IS_gcBusy = true
                 local gc = getGC()
-                if not gc then return end
+                if not gc then env.__IS_gcBusy = false return end
                 local n = 0
                 for _, obj in pairs(gc) do
                     n = n + 1
-                    if n % 4000 == 0 then
-                        rcSet(("scanning... %d"):format(n))
+                    if n % 1000 == 0 then
+                        if n % 10000 == 0 then rcSet(("scanning... %d"):format(n)) end
                         task.wait()
                     end
                     if type(obj) == "table" then
@@ -495012,17 +495016,21 @@ task.spawn(function()
                                 consts = obj
                             end
                         end
-                        if rankCharm and consts then return end
+                        if rankCharm and consts then break end
                     end
                 end
+                env.__IS_gcBusy = false
             end
 
-            -- A few spaced passes (module may load after joining a match),
-            -- but each pass yields internally so it won't lock up the game.
-            for _ = 1, 8 do
-                scanOnce()
+            -- getgc(true) itself blocks the frame, so call it rarely: first
+            -- pass 3s after load, then up to two retries 15s apart (the
+            -- module may only load after joining a match).
+            task.wait(3)
+            for _ = 1, 3 do
+                pcall(scanOnce)
+                getgenv().__IS_gcBusy = false
                 if rankCharm and consts then break end
-                task.wait(1.5)
+                task.wait(15)
             end
 
             if not rankCharm and not consts then
@@ -495959,6 +495967,18 @@ task.spawn(function()
         end
         bgCtx.applyBG = applyBG  -- expose for the Apply Now debug button
 
+        -- applyBG walks every frame of the window; dragging a slider fires
+        -- OnChanged many times a second, so coalesce into one run per 0.15s.
+        local applyQueued = false
+        local function scheduleApplyBG()
+            if applyQueued then return end
+            applyQueued = true
+            task.delay(0.15, function()
+                applyQueued = false
+                pcall(applyBG)
+            end)
+        end
+
         for _, name in ipairs({'IS_BgEnabled','IS_BgImageId','IS_BgLocalFile','IS_BgTransparency','IS_BgInnerT','IS_BgBrightness','IS_BgScaleType'}) do
             pcall(function()
                 local target = Toggles[name] or Options[name]
@@ -495966,7 +495986,7 @@ task.spawn(function()
                     -- One combined callback: sliders/dropdowns/inputs keep only
                     -- a single OnChanged callback, so a second registration
                     -- would replace this one.
-                    target:OnChanged(function() pcall(applyBG) end)
+                    target:OnChanged(function() scheduleApplyBG() end)
                 end
             end)
         end
@@ -496017,30 +496037,49 @@ task.spawn(function()
         end
         if #baseNames < 2 then notify("too few built-in sounds to locate the sound table", 6) return end
 
+        local function hasAudioFiles()
+            local okL, files = pcall(listfiles, SND_FOLDER)
+            if not okL or type(files) ~= "table" then return false end
+            for _, p in ipairs(files) do
+                local ext = tostring(p):lower():match("%.([^.]+)$")
+                if ext == "mp3" or ext == "ogg" or ext == "wav" or ext == "flac" then return true end
+            end
+            return false
+        end
+
+        -- A getgc scan blocks the frame, so only do it once there is an audio
+        -- file to add. Until then just check the folder every 10s (cheap).
+        while not hasAudioFiles() do task.wait(10) end
+
         -- Find the table that maps sound names to sounds: it has the built-in
-        -- names as keys. Single pass over getgc, yielding so it can't freeze.
+        -- names as keys. One getgc pass, yielding often, behind the shared lock.
         local probe = math.min(#baseNames, 6)
         local soundMap, sample
-        local okG, gc = pcall(getgc, true)
-        if okG and type(gc) == "table" then
+        local env = getgenv()
+        while env.__IS_gcBusy do task.wait(0.5) end
+        env.__IS_gcBusy = true
+        pcall(function()
+            local okG, gc = pcall(getgc, true)
+            if not (okG and type(gc) == "table") then return end
+            local first = baseNames[1]
             local n = 0
             for _, obj in pairs(gc) do
                 n = n + 1
-                if n % 4000 == 0 then task.wait() end
-                if type(obj) == "table" and obj ~= dd and obj ~= dd.Values then
-                    local hits = 0
-                    for i = 1, probe do
-                        local ok, v = pcall(rawget, obj, baseNames[i])
-                        if ok and v ~= nil then hits = hits + 1 else break end
+                if n % 1000 == 0 then task.wait() end
+                if type(obj) == "table" and obj ~= dd and obj ~= dd.Values and rawget(obj, first) ~= nil then
+                    local hits = 1
+                    for i = 2, probe do
+                        if rawget(obj, baseNames[i]) ~= nil then hits = hits + 1 else break end
                     end
                     if hits == probe then
                         soundMap = obj
-                        sample = rawget(obj, baseNames[1])
+                        sample = rawget(obj, first)
                         break
                     end
                 end
             end
-        end
+        end)
+        env.__IS_gcBusy = false
         if not soundMap then notify("built-in sound table not found", 6) return end
         if type(sample) ~= "string" and type(sample) ~= "table" then
             notify("sound table format (" .. type(sample) .. ") not supported", 6)
