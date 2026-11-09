@@ -496469,17 +496469,54 @@ task.spawn(function()
         pcall(function() setreadonly(mt, true) end)
     end)
 
-    -- === GRAY SKY (extra option in the skybox dropdown) ===
-    -- Adds "gray sky" to skybox_value. When it is selected (and skybox is
-    -- enabled) a Sky whose six faces are a solid gray image replaces the
-    -- current one; other Sky objects are parked and put back when another
-    -- option is chosen. Polled, because the dropdown keeps a single
-    -- OnChanged callback that the script needs.
+    -- === EXTRA SKIES (added to the skybox dropdown) ===
+    -- Adds "gray sky" plus 24 preset skies (face IDs from the LYHub/Solix
+    -- skybox) to skybox_value. Names the script already has are left to
+    -- the script. When one of ours is selected (and skybox is enabled) our
+    -- Sky replaces the current one; other Sky objects are parked (max 12
+    -- per 10s, so it can't loop with something that keeps re-adding skies)
+    -- and put back when another option is chosen. Polled, because the
+    -- dropdown keeps a single OnChanged callback that the script needs.
     task.spawn(function()
-        local NAME = "gray sky"
         local SEL_FILE = "unnamed/skybox_selected.txt"
+        local FACES = { "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp" }
         -- 16x16 PNG, solid RGB(133,133,135)
-        local PNG = "\137\80\78\71\13\10\26\10\0\0\0\13\73\72\68\82\0\0\0\16\0\0\0\16\8\2\0\0\0\144\145\104\54\0\0\0\25\73\68\65\84\120\218\99\108\109\109\103\32\5\48\49\144\8\70\53\140\106\24\58\26\0\253\56\1\177\77\20\195\25\0\0\0\0\73\69\78\68\174\66\96\130"
+        local GRAY_PNG = "\137\80\78\71\13\10\26\10\0\0\0\13\73\72\68\82\0\0\0\16\0\0\0\16\8\2\0\0\0\144\145\104\54\0\0\0\25\73\68\65\84\120\218\99\108\109\109\103\32\5\48\49\144\8\70\53\140\106\24\58\26\0\253\56\1\177\77\20\195\25\0\0\0\0\73\69\78\68\174\66\96\130"
+        -- Face order: Bk, Dn, Ft, Lf, Rt, Up
+        local PRESETS = {
+            ["Among Us"] = { 5752463190, 5752463190, 5752463190, 5752463190, 5752463190, 5752463190 },
+            ["Aurora"] = { 340908398, 340908450, 340908468, 340908504, 340908530, 340908586 },
+            ["Blue Aurora"] = { 12063984, 12064107, 12064152, 12064121, 12064115, 12064131 },
+            ["Blue Stars"] = { 149397684, 149397686, 149397688, 149397692, 149397697, 149397702 },
+            ["Chill"] = { 5084575798, 5084575916, 5103949679, 5103948542, 5103948784, 5084576400 },
+            ["Clouds"] = { 570557514, 570557775, 570557559, 570557620, 570557672, 570557727 },
+            ["DaBaby"] = { 7245418472, 7245418472, 7245418472, 7245418472, 7245418472, 7245418472 },
+            ["Default"] = { 91458024, 91457980, 91458024, 91458024, 91458024, 91458002 },
+            ["Gloomy"] = { 5346760450, 5346760689, 5346760919, 5346761102, 5346761335, 5346761509 },
+            ["Jungle"] = { 214399891, 214399887, 214399894, 214405668, 214399899, 214399889 },
+            ["Minecraft"] = { 1876545003, 1876544331, 1876542941, 1876543392, 1876543764, 1876544642 },
+            ["Mountain Scape"] = { 12474836637, 12474837052, 12474836748, 12474836935, 12474836446, 12474835757 },
+            ["Nebula"] = { 159454299, 159454296, 159454293, 159454286, 159454300, 159454288 },
+            ["Nebula Purple"] = { 129876530632297, 108406529909981, 104400530594543, 73372229972523, 87408857415924, 13781740568136 },
+            ["Neptune"] = { 218955819, 218953419, 218954524, 218958493, 218957134, 218950090 },
+            ["Realistic"] = { 144933338, 144931530, 144933262, 144933244, 144933299, 144931564 },
+            ["Redshift"] = { 401664839, 401664862, 401664960, 401664881, 401664901, 401664936 },
+            ["Spongebob"] = { 15962101128, 15970246218, 15962101128, 15962101128, 15962101128, 15962901054 },
+            ["Stars Shader"] = { 169210090, 169210108, 169210121, 169210133, 169210143, 169210149 },
+            ["Stormy"] = { 255027929, 255027967, 255027923, 255027938, 255027946, 255027960 },
+            ["Twilight"] = { 264908339, 264907909, 264909420, 264909758, 264908886, 264907379 },
+            ["Vaporwave"] = { 1417494030, 1417494146, 1417494253, 1417494402, 1417494499, 1417494643 },
+            ["Winter Mountain"] = { 402229526, 402229596, 402229293, 402229368, 402229417, 402229564 },
+            ["Yellowy Cloud"] = { 252760981, 252763035, 252761439, 252760980, 252760986, 252762652 },
+        }
+        local ORDER = {
+            "gray sky", "Nebula Purple", "Aurora", "Blue Aurora", "Blue Stars", "Chill",
+            "Clouds", "Minecraft", "Mountain Scape", "Nebula", "Neptune",
+            "Realistic", "Redshift", "Twilight", "Vaporwave", "Winter Mountain",
+            "Yellowy Cloud", "Among Us", "DaBaby", "Spongebob", "Stormy",
+            "Gloomy", "Jungle", "Stars Shader", "Default",
+        }
+
         local Lighting = game:GetService("Lighting")
         local function notify(m) pcall(function() lib:Notify("[Sky] " .. m, 5) end) end
 
@@ -496491,78 +496528,113 @@ task.spawn(function()
         end
         if not (dd and type(dd.Values) == "table") then return end
 
-        local getter = getcustomasset or (syn and syn.getcustomasset)
-        if type(getter) ~= "function" or type(writefile) ~= "function" then
-            notify("executor lacks getcustomasset / writefile")
-            return
-        end
+        -- gray sky needs a local image; presets work without it
+        local grayUrl = nil
         pcall(function()
+            local getter = getcustomasset or (syn and syn.getcustomasset)
+            if type(getter) ~= "function" or type(writefile) ~= "function" then return end
             if type(isfolder) == "function" and not isfolder("unnamed") then makefolder("unnamed") end
+            writefile("unnamed/graysky.png", GRAY_PNG)
+            local ok, url = pcall(getter, "unnamed/graysky.png")
+            if ok and type(url) == "string" and url ~= "" then grayUrl = url end
         end)
-        local path = "unnamed/graysky.png"
-        pcall(writefile, path, PNG)
-        local okU, url = pcall(getter, path)
-        if not okU or type(url) ~= "string" or url == "" then
-            notify("could not load the gray sky image")
-            return
-        end
 
-        local function ensureOption()
-            if not table.find(dd.Values, NAME) then
+        -- Names we own = the ones the script doesn't already have
+        local ours = {}
+        local ourList = {}
+        for _, name in ipairs(ORDER) do
+            if not table.find(dd.Values, name) and (name ~= "gray sky" or grayUrl) then
+                ours[name] = true
+                table.insert(ourList, name)
+            end
+        end
+        if #ourList == 0 then return end
+
+        local function ensureOptions()
+            local missing = false
+            for _, name in ipairs(ourList) do
+                if not table.find(dd.Values, name) then missing = true; break end
+            end
+            if missing then
                 local vals = table.clone(dd.Values)
-                table.insert(vals, NAME)
+                for _, name in ipairs(ourList) do
+                    if not table.find(vals, name) then table.insert(vals, name) end
+                end
                 pcall(function() dd:SetValues(vals) end)
             end
         end
-        ensureOption()
+        ensureOptions()
 
-        local ourSky = nil
-        local stash = Instance.new("Folder")  -- parked skies (kept, not destroyed)
-        stash.Name = "IS_SkyStash"
+        local ourSky, ourSkyName = nil, nil
+        local parked = {}            -- skies we took out of Lighting
+        local parkCount, parkSince = 0, 0
 
-        local function apply()
-            if not (ourSky and ourSky.Parent == Lighting) then
-                ourSky = Instance.new("Sky")
-                ourSky.Name = "IS_GraySky"
-                for _, f in ipairs({ "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp" }) do
-                    ourSky[f] = url
-                end
+        local function setFaces(name)
+            if name == "gray sky" then
+                for _, f in ipairs(FACES) do ourSky[f] = grayUrl end
                 ourSky.CelestialBodiesShown = false
                 ourSky.StarCount = 0
+            else
+                local ids = PRESETS[name]
+                for i, f in ipairs(FACES) do ourSky[f] = "rbxassetid://" .. tostring(ids[i]) end
+                ourSky.CelestialBodiesShown = true
+                ourSky.StarCount = 3000
+            end
+            ourSkyName = name
+        end
+
+        local function apply(name)
+            if not (ourSky and ourSky.Parent == Lighting) then
+                if ourSky then pcall(function() ourSky:Destroy() end) end
+                ourSky = Instance.new("Sky")
+                ourSky.Name = "IS_ExtraSky"
+                setFaces(name)
                 ourSky.Parent = Lighting
+            elseif ourSkyName ~= name then
+                setFaces(name)
             end
             for _, c in ipairs(Lighting:GetChildren()) do
-                if c:IsA("Sky") and c ~= ourSky then c.Parent = stash end
+                if c:IsA("Sky") and c ~= ourSky then
+                    if os.clock() - parkSince > 10 then parkCount, parkSince = 0, os.clock() end
+                    if parkCount < 12 then
+                        parkCount = parkCount + 1
+                        table.insert(parked, c)
+                        if #parked > 8 then table.remove(parked, 1) end
+                        c.Parent = nil
+                    end
+                end
             end
         end
 
         local function remove()
-            if ourSky then pcall(function() ourSky:Destroy() end); ourSky = nil end
+            if ourSky then pcall(function() ourSky:Destroy() end); ourSky, ourSkyName = nil, nil end
             -- Put parked skies back only if nothing replaced them meanwhile
             if not Lighting:FindFirstChildOfClass("Sky") then
-                for _, c in ipairs(stash:GetChildren()) do c.Parent = Lighting end
+                for _, c in ipairs(parked) do pcall(function() c.Parent = Lighting end) end
             end
+            table.clear(parked)
         end
 
-        -- Restore a saved "gray sky" choice (a config load ran before the
-        -- option existed, so it couldn't select it)
+        -- Restore a saved choice of ours (a config load ran before our
+        -- options existed, so it couldn't select them)
         pcall(function()
-            if type(isfile) == "function" and isfile(SEL_FILE) and readfile(SEL_FILE) == NAME then
-                dd:SetValue(NAME)
+            if type(isfile) == "function" and isfile(SEL_FILE) then
+                local saved = readfile(SEL_FILE)
+                if ours[saved] then dd:SetValue(saved) end
             end
         end)
 
         local lastSel = dd.Value
         while task.wait(0.5) do
-            ensureOption()
+            ensureOptions()
             local sel = dd.Value
             if sel ~= lastSel then
                 lastSel = sel
                 pcall(writefile, SEL_FILE, tostring(sel or ""))
             end
             local enabled = Toggles.skybox_enabled == nil or Toggles.skybox_enabled.Value
-            if enabled and sel == NAME then
-                pcall(apply)
+            if enabled and ours[sel] then
+                pcall(apply, sel)
             elseif ourSky then
                 pcall(remove)
             end
