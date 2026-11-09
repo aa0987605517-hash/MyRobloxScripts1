@@ -495983,6 +495983,150 @@ task.spawn(function()
             end
         end)
     end)
+    -- === CUSTOM HIT SOUNDS (audio files in workspace/unnamed) ===
+    -- Adds every .mp3/.ogg/.wav/.flac in the folder to the existing hit sound
+    -- dropdown as "custom: <file>". The script's own hit sound system plays
+    -- them, so the volume slider and preview button keep working.
+    task.spawn(function()
+        local SND_FOLDER = "unnamed"
+        local PREFIX = "custom: "
+        local SEL_FILE = SND_FOLDER .. "/hitsound_selected.txt"
+        local function notify(m, s) pcall(function() lib:Notify("[HitSound] " .. m, s or 4) end) end
+
+        local getter = getcustomasset or (syn and syn.getcustomasset)
+        if type(getter) ~= "function" or type(listfiles) ~= "function" or type(getgc) ~= "function" then
+            notify("executor lacks getcustomasset / listfiles / getgc", 6)
+            return
+        end
+
+        -- Wait for the main script's hit sound dropdown
+        local dd
+        for _ = 1, 60 do
+            dd = Options.hit_sounds_selected
+            if dd and type(dd.Values) == "table" and #dd.Values > 0 then break end
+            task.wait(0.5)
+        end
+        if not (dd and type(dd.Values) == "table" and #dd.Values > 0) then
+            notify("hit sound dropdown not found", 6)
+            return
+        end
+
+        local baseNames = {}
+        for _, v in ipairs(dd.Values) do
+            if type(v) == "string" and v:sub(1, #PREFIX) ~= PREFIX then table.insert(baseNames, v) end
+        end
+        if #baseNames < 2 then notify("too few built-in sounds to locate the sound table", 6) return end
+
+        -- Find the table that maps sound names to sounds: it has the built-in
+        -- names as keys. Single pass over getgc, yielding so it can't freeze.
+        local probe = math.min(#baseNames, 6)
+        local soundMap, sample
+        local okG, gc = pcall(getgc, true)
+        if okG and type(gc) == "table" then
+            local n = 0
+            for _, obj in pairs(gc) do
+                n = n + 1
+                if n % 4000 == 0 then task.wait() end
+                if type(obj) == "table" and obj ~= dd and obj ~= dd.Values then
+                    local hits = 0
+                    for i = 1, probe do
+                        local ok, v = pcall(rawget, obj, baseNames[i])
+                        if ok and v ~= nil then hits = hits + 1 else break end
+                    end
+                    if hits == probe then
+                        soundMap = obj
+                        sample = rawget(obj, baseNames[1])
+                        break
+                    end
+                end
+            end
+        end
+        if not soundMap then notify("built-in sound table not found", 6) return end
+        if type(sample) ~= "string" and type(sample) ~= "table" then
+            notify("sound table format (" .. type(sample) .. ") not supported", 6)
+            return
+        end
+        pcall(function() if setreadonly then setreadonly(soundMap, false) end end)
+
+        -- Build an entry in the same shape as the built-in ones
+        local function makeEntry(url)
+            if type(sample) == "string" then return url end
+            local t = table.clone(sample)
+            for k, v in pairs(t) do
+                if type(v) == "string" and (v:find("rbxasset", 1, true) or v:find("://", 1, true)) then
+                    t[k] = url
+                end
+            end
+            return t
+        end
+
+        local known = {}
+        local function scan()
+            local okL, files = pcall(listfiles, SND_FOLDER)
+            if not okL or type(files) ~= "table" then return 0 end
+            local added = 0
+            for _, p in ipairs(files) do
+                local name = p:match("([^/\\]+)$") or p
+                local ext = name:lower():match("%.([^.]+)$")
+                if (ext == "mp3" or ext == "ogg" or ext == "wav" or ext == "flac") and not known[name] then
+                    local okA, url = pcall(getter, SND_FOLDER .. "/" .. name)
+                    if okA and type(url) == "string" and url ~= "" then
+                        local okS = pcall(function() soundMap[PREFIX .. name] = makeEntry(url) end)
+                        if okS then
+                            known[name] = true
+                            added = added + 1
+                        end
+                    end
+                end
+            end
+            if added > 0 then
+                local vals = {}
+                for _, v in ipairs(baseNames) do table.insert(vals, v) end
+                local custom = {}
+                for name in pairs(known) do table.insert(custom, PREFIX .. name) end
+                table.sort(custom)
+                for _, v in ipairs(custom) do table.insert(vals, v) end
+                pcall(function() dd:SetValues(vals) end)
+            end
+            return added
+        end
+
+        scan()
+        local total = 0
+        for _ in pairs(known) do total = total + 1 end
+        notify(("%d custom sound(s) from %s/"):format(total, SND_FOLDER), 4)
+
+        -- Restore a saved custom selection (a config loaded earlier could not
+        -- select it because the name wasn't in the list yet)
+        pcall(function()
+            if isfile and isfile(SEL_FILE) then
+                local saved = readfile(SEL_FILE)
+                if saved:sub(1, #PREFIX) == PREFIX and known[saved:sub(#PREFIX + 1)] then
+                    dd:SetValue(saved)
+                end
+            end
+        end)
+
+        -- Remember the selection and pick up new files. Polling instead of
+        -- OnChanged: the dropdown keeps only one OnChanged callback and the
+        -- script's own handler must stay.
+        local lastSel = dd.Value
+        local tick10 = 0
+        while task.wait(2) do
+            local sel = dd.Value
+            if sel ~= lastSel then
+                lastSel = sel
+                pcall(function() writefile(SEL_FILE, tostring(sel or "")) end)
+            end
+            tick10 = tick10 + 2
+            if tick10 >= 10 then
+                tick10 = 0
+                local added = scan()
+                if added > 0 then notify(("added %d new sound(s)"):format(added), 3) end
+            end
+        end
+    end)
+
 end)
 
 return _result
