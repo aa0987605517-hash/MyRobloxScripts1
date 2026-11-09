@@ -493706,6 +493706,16 @@ end)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 task.spawn(function()
+    -- Safe mode: with workspace/unnamed/safemode.txt present, none of the
+    -- added features (Misc/Main/Settings/World additions, hooks, scans,
+    -- skies...) load - only the original script runs. Used to tell whether
+    -- a crash comes from these additions or from somewhere else.
+    local safeOk, safe = pcall(function() return isfile and isfile("unnamed/safemode.txt") end)
+    if safeOk and safe then
+        warn("[Addons] safe mode: unnamed/safemode.txt found, add-on features not loaded")
+        return
+    end
+
     local sharedEnv = getgenv and getgenv() or _G
     local Players = cloneref(game:GetService("Players"))
     local LocalPlayer = Players.LocalPlayer
