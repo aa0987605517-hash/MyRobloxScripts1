@@ -494705,6 +494705,7 @@ task.spawn(function()
     pcall(function()
         local oldNc
         local function dataHandler(self, ...)
+            if checkcaller and checkcaller() then return oldNc(self, ...) end
             local ok, method = pcall(getnamecallmethod)
             if not ok then return oldNc(self, ...) end
 
@@ -494787,7 +494788,10 @@ task.spawn(function()
             if installed then return end
             installed = true
             if type(hookmetamethod) == "function" then
-                oldNc = hookmetamethod(game, "__namecall", newcclosure(dataHandler))
+                -- No extra newcclosure: hookmetamethod wraps the function itself,
+                -- and double wrapping breaks yielding calls (WaitForChild,
+                -- InvokeServer) on some executors, crashing the client.
+                oldNc = hookmetamethod(game, "__namecall", dataHandler)
             else
                 local mt = getrawmetatable(game)
                 oldNc = mt and mt.__namecall
@@ -496497,6 +496501,7 @@ task.spawn(function()
         -- hookmetamethod over swapping the metatable field by hand.
         local oldNc
         local function handler(self, ...)
+            if checkcaller and checkcaller() then return oldNc(self, ...) end
             local method = getnamecallmethod()
             if method == "FireServer" and Toggles.IS_HHSEnabled and Toggles.IS_HHSEnabled.Value then
                 -- Forward the call FIRST. findHitPart makes method calls
@@ -496520,7 +496525,10 @@ task.spawn(function()
             if hooked then return end
             hooked = true
             if type(hookmetamethod) == "function" then
-                oldNc = hookmetamethod(game, "__namecall", newcclosure(handler))
+                -- No extra newcclosure: hookmetamethod wraps the function itself,
+                -- and double wrapping breaks yielding calls (WaitForChild,
+                -- InvokeServer) on some executors, crashing the client.
+                oldNc = hookmetamethod(game, "__namecall", handler)
             else
                 local mt = getrawmetatable(game)
                 oldNc = mt and mt.__namecall
