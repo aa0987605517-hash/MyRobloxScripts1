@@ -496244,11 +496244,24 @@ task.spawn(function()
                     saved[inst] = { Parent = inst.Parent }
                     inst.Parent = nil
                 else
-                    -- Glass / ForceField / Neon only look right with their own
-                    -- material; turning them to SmoothPlastic makes glass go
-                    -- milky. Leave them as they are.
+                    -- Only flatten materials that are just a surface pattern.
+                    -- Materials with a visual effect (glass refraction, glow,
+                    -- reflection, animation, translucency) keep their material;
+                    -- their texture maps are still removed below.
                     local m = inst.Material
-                    if m == Enum.Material.Glass or m == Enum.Material.ForceField or m == Enum.Material.Neon then
+                    local M = Enum.Material
+                    if m == M.Glass or m == M.ForceField or m == M.Neon or m == M.Foil
+                        or m == M.CrackedLava or m == M.Ice or m == M.Glacier then
+                        local rec = {}
+                        if inst.MaterialVariant ~= "" then
+                            rec.MaterialVariant = inst.MaterialVariant
+                            inst.MaterialVariant = ""
+                        end
+                        if inst:IsA("MeshPart") and inst.TextureID ~= "" then
+                            rec.TextureID = inst.TextureID
+                            inst.TextureID = ""
+                        end
+                        if next(rec) then saved[inst] = rec end
                         return
                     end
                     local rec = {}
