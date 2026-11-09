@@ -496220,6 +496220,16 @@ task.spawn(function()
         local function excluded(inst)
             local cam = workspace.CurrentCamera
             if cam and inst:IsDescendantOf(cam) then return true end
+            -- Weapons and their wraps: Rivals keeps view models in a
+            -- "ViewModels" folder (ClientViewModel etc.), not under the
+            -- camera. Skip anything inside a view model or a Tool.
+            local node = inst.Parent
+            while node and node ~= workspace do
+                if node:IsA("Tool") then return true end
+                local nm = node.Name:lower()
+                if nm:find("viewmodel", 1, true) then return true end
+                node = node.Parent
+            end
             for _, p in ipairs(PlayersT:GetPlayers()) do
                 local c = p.Character
                 if c and inst:IsDescendantOf(c) then return true end
