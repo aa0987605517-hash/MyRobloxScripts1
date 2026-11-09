@@ -496469,6 +496469,106 @@ task.spawn(function()
         pcall(function() setreadonly(mt, true) end)
     end)
 
+    -- === GRAY SKY (extra option in the skybox dropdown) ===
+    -- Adds "gray sky" to skybox_value. When it is selected (and skybox is
+    -- enabled) a Sky whose six faces are a solid gray image replaces the
+    -- current one; other Sky objects are parked and put back when another
+    -- option is chosen. Polled, because the dropdown keeps a single
+    -- OnChanged callback that the script needs.
+    task.spawn(function()
+        local NAME = "gray sky"
+        local SEL_FILE = "unnamed/skybox_selected.txt"
+        -- 16x16 PNG, solid RGB(133,133,135)
+        local PNG = "\137\80\78\71\13\10\26\10\0\0\0\13\73\72\68\82\0\0\0\16\0\0\0\16\8\2\0\0\0\144\145\104\54\0\0\0\25\73\68\65\84\120\218\99\108\109\109\103\32\5\48\49\144\8\70\53\140\106\24\58\26\0\253\56\1\177\77\20\195\25\0\0\0\0\73\69\78\68\174\66\96\130"
+        local Lighting = game:GetService("Lighting")
+        local function notify(m) pcall(function() lib:Notify("[Sky] " .. m, 5) end) end
+
+        local dd
+        for _ = 1, 60 do
+            dd = Options.skybox_value
+            if dd and type(dd.Values) == "table" and #dd.Values > 0 then break end
+            task.wait(0.5)
+        end
+        if not (dd and type(dd.Values) == "table") then return end
+
+        local getter = getcustomasset or (syn and syn.getcustomasset)
+        if type(getter) ~= "function" or type(writefile) ~= "function" then
+            notify("executor lacks getcustomasset / writefile")
+            return
+        end
+        pcall(function()
+            if type(isfolder) == "function" and not isfolder("unnamed") then makefolder("unnamed") end
+        end)
+        local path = "unnamed/graysky.png"
+        pcall(writefile, path, PNG)
+        local okU, url = pcall(getter, path)
+        if not okU or type(url) ~= "string" or url == "" then
+            notify("could not load the gray sky image")
+            return
+        end
+
+        local function ensureOption()
+            if not table.find(dd.Values, NAME) then
+                local vals = table.clone(dd.Values)
+                table.insert(vals, NAME)
+                pcall(function() dd:SetValues(vals) end)
+            end
+        end
+        ensureOption()
+
+        local ourSky = nil
+        local stash = Instance.new("Folder")  -- parked skies (kept, not destroyed)
+        stash.Name = "IS_SkyStash"
+
+        local function apply()
+            if not (ourSky and ourSky.Parent == Lighting) then
+                ourSky = Instance.new("Sky")
+                ourSky.Name = "IS_GraySky"
+                for _, f in ipairs({ "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp" }) do
+                    ourSky[f] = url
+                end
+                ourSky.CelestialBodiesShown = false
+                ourSky.StarCount = 0
+                ourSky.Parent = Lighting
+            end
+            for _, c in ipairs(Lighting:GetChildren()) do
+                if c:IsA("Sky") and c ~= ourSky then c.Parent = stash end
+            end
+        end
+
+        local function remove()
+            if ourSky then pcall(function() ourSky:Destroy() end); ourSky = nil end
+            -- Put parked skies back only if nothing replaced them meanwhile
+            if not Lighting:FindFirstChildOfClass("Sky") then
+                for _, c in ipairs(stash:GetChildren()) do c.Parent = Lighting end
+            end
+        end
+
+        -- Restore a saved "gray sky" choice (a config load ran before the
+        -- option existed, so it couldn't select it)
+        pcall(function()
+            if type(isfile) == "function" and isfile(SEL_FILE) and readfile(SEL_FILE) == NAME then
+                dd:SetValue(NAME)
+            end
+        end)
+
+        local lastSel = dd.Value
+        while task.wait(0.5) do
+            ensureOption()
+            local sel = dd.Value
+            if sel ~= lastSel then
+                lastSel = sel
+                pcall(writefile, SEL_FILE, tostring(sel or ""))
+            end
+            local enabled = Toggles.skybox_enabled == nil or Toggles.skybox_enabled.Value
+            if enabled and sel == NAME then
+                pcall(apply)
+            elseif ourSky then
+                pcall(remove)
+            end
+        end
+    end)
+
 end)
 
 return _result
