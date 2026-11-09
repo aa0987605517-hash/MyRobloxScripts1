@@ -495661,10 +495661,13 @@ task.spawn(function()
     -- them, so the volume slider and preview button keep working.
     pcall(function()
         local chsGroup = miscTab:AddRightGroupbox('Custom Hit Sounds')
-        chsGroup:AddToggle('IS_HitListCustom', {
+        -- New key + default off: the old key was saved as on and the memory
+        -- scan it triggers sent the game back to the Roblox home page right
+        -- after loading.
+        chsGroup:AddToggle('IS_HitListCustomOn', {
             Text = 'Add files to hit sound list',
-            Default = true,
-            Tooltip = 'List audio files from workspace/unnamed as "custom: <file>" in the built-in hit sound dropdown (scans memory once)',
+            Default = false,
+            Tooltip = 'List audio files from workspace/unnamed as "custom: <file>" in the built-in hit sound dropdown. Scans memory once; may crash on some executors.',
         })
     end)
     task.spawn(function()
@@ -495710,7 +495713,7 @@ task.spawn(function()
         -- A getgc scan blocks the frame and spikes memory (it has crashed
         -- some executors), so only do it while "Add files to hit sound list"
         -- (Custom Hit Sounds groupbox) is on and there is an audio file.
-        while not (Toggles.IS_HitListCustom and Toggles.IS_HitListCustom.Value and hasAudioFiles()) do
+        while not (Toggles.IS_HitListCustomOn and Toggles.IS_HitListCustomOn.Value and hasAudioFiles()) do
             task.wait(3)
         end
 
@@ -495721,7 +495724,30 @@ task.spawn(function()
         local env = getgenv()
         while env.__IS_gcBusy do task.wait(0.5) end
         env.__IS_gcBusy = true
-        pcall(function()
+        local function isSoundMap(obj)
+            if type(obj) ~= "table" or obj == dd or obj == dd.Values then return false end
+            for i = 1, probe do
+                if rawget(obj, baseNames[i]) == nil then return false end
+            end
+            return true
+        end
+        -- filtergc lets the executor pick out the table natively, without
+        -- building and walking a list of every object in memory.
+        if type(filtergc) == "function" then
+            pcall(function()
+                local keys = {}
+                for i = 1, probe do keys[i] = baseNames[i] end
+                local found = filtergc("table", { Keys = keys }, true)
+                if type(found) == "table" and isSoundMap(found) then
+                    soundMap, sample = found, rawget(found, baseNames[1])
+                elseif type(found) == "table" then
+                    for _, t in pairs(found) do
+                        if isSoundMap(t) then soundMap, sample = t, rawget(t, baseNames[1]); break end
+                    end
+                end
+            end)
+        end
+        if not soundMap then pcall(function()
             local okG, gc = pcall(getgc, true)
             if not (okG and type(gc) == "table") then return end
             local first = baseNames[1]
@@ -495741,7 +495767,7 @@ task.spawn(function()
                     end
                 end
             end
-        end)
+        end) end
         env.__IS_gcBusy = false
         if not soundMap then notify("built-in sound table not found", 6) return end
         if type(sample) ~= "string" and type(sample) ~= "table" then
