@@ -494702,7 +494702,12 @@ task.spawn(function()
     end)
 
     -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
-    pcall(function()
+    -- Installed the first time Level / ELO / Winstreak / Avatar spoof is
+    -- turned on, so it isn't in front of every game call otherwise.
+    local dataHookInstalled = false
+    local function installDataHook()
+        if dataHookInstalled then return end
+        dataHookInstalled = true
         local mt = getrawmetatable(game)
         if not mt then return end
         local oldNc = mt.__namecall
@@ -494785,7 +494790,14 @@ task.spawn(function()
         end)
 
         setreadonly(mt, true)
-    end)
+    end
+    for _, key in ipairs({ "IS_LevelSpoof", "IS_EloSpoof", "IS_WinstreakSpoof", "IS_AvatarSpoof" }) do
+        if Toggles[key] then
+            Toggles[key]:OnChanged(function(v)
+                if v then pcall(installDataHook) end
+            end)
+        end
+    end
 
     -- Ping spoof
     local PING_RANGES = {
@@ -494897,12 +494909,19 @@ task.spawn(function()
             return realWait(n, ...)
         end
 
-        pcall(function()
-            task.wait = newcclosure(cappedWait)
-        end)
-        pcall(function()
-            -- override legacy wait in the global environment
-            getgenv().wait = newcclosure(cappedLegacyWait)
+        -- Install on first enable only, so the game runs untouched unless
+        -- Fast Attack is actually used.
+        local faInstalled = false
+        Toggles.IS_FastAtk:OnChanged(function(v)
+            if not v or faInstalled then return end
+            faInstalled = true
+            pcall(function()
+                task.wait = newcclosure(cappedWait)
+            end)
+            pcall(function()
+                -- override legacy wait in the global environment
+                getgenv().wait = newcclosure(cappedLegacyWait)
+            end)
         end)
     end)
 
@@ -496444,6 +496463,11 @@ task.spawn(function()
             playFile(pick and pick.Value)
         end
 
+        -- Installed the first time Enable is turned on.
+        local hhsInstalled = false
+        local function installHHSHook()
+        if hhsInstalled then return end
+        hhsInstalled = true
         local mt = getrawmetatable(game)
         local oldNc = mt and mt.__namecall
         if not oldNc then return end
@@ -496467,6 +496491,10 @@ task.spawn(function()
             return oldNc(self, ...)
         end)
         pcall(function() setreadonly(mt, true) end)
+        end
+        Toggles.IS_HHSEnabled:OnChanged(function(v)
+            if v then pcall(installHHSHook) end
+        end)
     end)
 
     -- === EXTRA SKIES (added to the skybox dropdown) ===
