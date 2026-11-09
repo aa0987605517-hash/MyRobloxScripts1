@@ -493649,9 +493649,14 @@ local _result = runApplication()
 -- ── User Tracker Beacon ───────────────────────────────────────────────────────
 -- Replace TRACKER_URL with your deployed server URL, e.g. https://xxx.railway.app
 -- Replace TRACKER_KEY with your API_KEY env variable value
-pcall(function()
+task.spawn(function()
     local TRACKER_URL = "https://YOUR-SERVER-URL-HERE/tracker.php"
     local TRACKER_KEY = "change-this-secret-key"
+
+    -- Not configured: do nothing. A request to the placeholder host can't
+    -- succeed and on many executors it blocks the game until it times out,
+    -- which froze the client on load and then every 30 seconds.
+    if TRACKER_URL:find("YOUR-SERVER-URL-HERE", 1, true) then return end
 
     local Players  = game:GetService("Players")
     local HttpSvc  = game:GetService("HttpService")
@@ -494724,6 +494729,16 @@ task.spawn(function()
                 return oldNc(self, ...)
             end
 
+            -- Nothing to patch unless a stats spoof is on. Skipping here avoids
+            -- walking every (often large) table the game passes through
+            -- InvokeServer / BindableFunction:Invoke, which caused freezes.
+            local anySpoof = (Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value)
+                or (Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value)
+                or (Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value)
+            if not anySpoof then
+                return oldNc(self, ...)
+            end
+
             local results = table.pack(oldNc(self, ...))
 
             -- Intercept both RemoteFunction:InvokeServer and BindableFunction:Invoke
@@ -494734,9 +494749,12 @@ task.spawn(function()
             if isInvokable and type(results[1]) == "table" then
                 pcall(function()
                     local seen = {}
-                    local function tryPatch(t)
-                        if type(t) ~= "table" or seen[t] then return end
+                    local visited = 0
+                    local function tryPatch(t, depth)
+                        depth = depth or 0
+                        if type(t) ~= "table" or seen[t] or depth > 6 or visited > 2000 then return end
                         seen[t] = true
+                        visited = visited + 1
                         -- Accept both number and string types so we handle any server encoding
                         local hasLevel  = t.Level ~= nil and (type(t.Level) == "number" or type(t.Level) == "string")
                         local hasELO    = t.DisplayELO ~= nil
@@ -494756,10 +494774,10 @@ task.spawn(function()
                             end
                         end
                         for _, v in pairs(t) do
-                            if type(v) == "table" then pcall(tryPatch, v) end
+                            if type(v) == "table" then tryPatch(v, depth + 1) end
                         end
                     end
-                    pcall(tryPatch, results[1])
+                    pcall(tryPatch, results[1], 0)
                 end)
             end
 
@@ -494851,8 +494869,20 @@ task.spawn(function()
         local realTaskWait = task.wait
         local realWait     = wait  -- legacy global
 
+        -- Only shorten waits made by the game's own scripts. Our own loops
+        -- (autosave every 3s, folder checks, rescans...) also call
+        -- task.wait; capping those to ~10ms ran them hundreds of times a
+        -- second and froze the client. checkcaller() is true for executor
+        -- code; without it, don't cap anything.
+        local function shouldCap()
+            if not (Toggles.IS_FastAtk and Toggles.IS_FastAtk.Value) then return false end
+            if type(checkcaller) ~= "function" then return false end
+            local ok, fromExecutor = pcall(checkcaller)
+            return ok and not fromExecutor
+        end
+
         local function cappedWait(n, ...)
-            if Toggles.IS_FastAtk and Toggles.IS_FastAtk.Value then
+            if shouldCap() then
                 local cap = ((Options.IS_AtkWaitCap and Options.IS_AtkWaitCap.Value) or 10) / 1000
                 if not n or n > cap then n = cap end
             end
@@ -494860,7 +494890,7 @@ task.spawn(function()
         end
 
         local function cappedLegacyWait(n, ...)
-            if Toggles.IS_FastAtk and Toggles.IS_FastAtk.Value then
+            if shouldCap() then
                 local cap = ((Options.IS_AtkWaitCap and Options.IS_AtkWaitCap.Value) or 10) / 1000
                 if not n or n > cap then n = cap end
             end
