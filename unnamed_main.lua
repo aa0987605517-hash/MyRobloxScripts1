@@ -496214,6 +496214,13 @@ task.spawn(function()
                     saved[inst] = { Parent = inst.Parent }
                     inst.Parent = nil
                 else
+                    -- Glass / ForceField / Neon only look right with their own
+                    -- material; turning them to SmoothPlastic makes glass go
+                    -- milky. Leave them as they are.
+                    local m = inst.Material
+                    if m == Enum.Material.Glass or m == Enum.Material.ForceField or m == Enum.Material.Neon then
+                        return
+                    end
                     local rec = {}
                     if inst.Material ~= Enum.Material.SmoothPlastic then
                         rec.Material = inst.Material
@@ -496265,6 +496272,141 @@ task.spawn(function()
         Toggles.IS_NoTextures:OnChanged(function(v)
             if v then task.spawn(enable) else task.spawn(disable) end
         end)
+    end)
+
+    -- === HEAD / BODY HIT SOUNDS (files in workspace/unnamed) ===
+    -- Rivals sends the part you hit to the server when you shoot or swing.
+    -- Read (never modify) FireServer arguments, find a part of another
+    -- player's character, and play the headshot or body sound for it.
+    pcall(function()
+        local HS_FOLDER = "unnamed"
+        local PlayersH = game:GetService("Players")
+        local SoundSvc = game:GetService("SoundService")
+        local hsTab = miscTab
+        local hsGroup = hsTab:AddRightGroupbox('Head / Body Hit Sounds')
+
+        local function listAudio()
+            local out = { '(none)' }
+            pcall(function()
+                if type(listfiles) ~= "function" then return end
+                for _, p in ipairs(listfiles(HS_FOLDER)) do
+                    local name = p:match("([^/\\]+)$") or p
+                    local ext = name:lower():match("%.([^.]+)$")
+                    if ext == "mp3" or ext == "ogg" or ext == "wav" or ext == "flac" then
+                        table.insert(out, name)
+                    end
+                end
+            end)
+            return out
+        end
+
+        hsGroup:AddToggle('IS_HHSEnabled', {
+            Text = 'Enable',
+            Default = false,
+            Tooltip = 'Turn off the built-in hit sound to avoid hearing both',
+        })
+        hsGroup:AddDropdown('IS_HHSHead', { Text = 'Headshot Sound', Values = listAudio(), Default = '(none)' })
+        hsGroup:AddDropdown('IS_HHSBody', { Text = 'Body Sound', Values = listAudio(), Default = '(none)' })
+        hsGroup:AddSlider('IS_HHSVolume', { Text = 'Volume', Default = 1, Min = 0, Max = 3, Rounding = 2 })
+        hsGroup:AddButton({
+            Text = 'Refresh sound list',
+            Func = function()
+                local vals = listAudio()
+                pcall(function() Options.IS_HHSHead:SetValues(vals) end)
+                pcall(function() Options.IS_HHSBody:SetValues(vals) end)
+                pcall(function() lib:Notify(("[HitSound] %d file(s) in %s/"):format(#vals - 1, HS_FOLDER), 3) end)
+            end,
+        })
+        hsGroup:AddToggle('IS_HHSDebug', {
+            Text = 'Show hit log',
+            Default = false,
+            Tooltip = 'Notify which part was hit (to check head/body detection)',
+        })
+
+        local getter = getcustomasset or (syn and syn.getcustomasset)
+        local urlCache = {}
+        local function urlFor(name)
+            if not name or name == '' or name == '(none)' or type(getter) ~= "function" then return nil end
+            if urlCache[name] == nil then
+                local ok, url = pcall(getter, HS_FOLDER .. "/" .. name)
+                urlCache[name] = (ok and type(url) == "string" and url ~= "") and url or false
+            end
+            return urlCache[name] or nil
+        end
+
+        local function playFile(name)
+            local url = urlFor(name)
+            if not url then return end
+            local s = Instance.new("Sound")
+            s.SoundId = url
+            s.Volume = (Options.IS_HHSVolume and Options.IS_HHSVolume.Value) or 1
+            s.Parent = SoundSvc
+            s:Play()
+            task.delay(5, function() pcall(function() s:Destroy() end) end)
+        end
+
+        -- Is this part on another player's character?
+        local function enemyPart(v)
+            if typeof(v) ~= "Instance" or not v:IsA("BasePart") then return nil end
+            local model = v:FindFirstAncestorOfClass("Model")
+            while model do
+                local plr = PlayersH:GetPlayerFromCharacter(model)
+                if plr then return plr ~= PlayersH.LocalPlayer and v or nil end
+                model = model:FindFirstAncestorOfClass("Model")
+            end
+            return nil
+        end
+
+        local function findHitPart(args, n)
+            for i = 1, n do
+                local a = args[i]
+                local p = enemyPart(a)
+                if p then return p end
+                if type(a) == "table" then
+                    for _, v in pairs(a) do
+                        p = enemyPart(v)
+                        if p then return p end
+                        if type(v) == "table" then
+                            for _, w in pairs(v) do
+                                p = enemyPart(w)
+                                if p then return p end
+                            end
+                        end
+                    end
+                end
+            end
+            return nil
+        end
+
+        local lastPlay = 0
+        local function onHit(part)
+            local now = os.clock()
+            if now - lastPlay < 0.05 then return end
+            lastPlay = now
+            local isHead = part.Name:lower():find("head", 1, true) ~= nil
+            if Toggles.IS_HHSDebug and Toggles.IS_HHSDebug.Value then
+                pcall(function() lib:Notify(("[HitSound] %s (%s)"):format(isHead and "HEAD" or "BODY", part.Name), 2) end)
+            end
+            local pick = isHead and Options.IS_HHSHead or Options.IS_HHSBody
+            playFile(pick and pick.Value)
+        end
+
+        local mt = getrawmetatable(game)
+        local oldNc = mt and mt.__namecall
+        if not oldNc then return end
+        setreadonly(mt, false)
+        mt.__namecall = newcclosure(function(self, ...)
+            if Toggles.IS_HHSEnabled and Toggles.IS_HHSEnabled.Value and getnamecallmethod() == "FireServer" then
+                local n = select("#", ...)
+                if n > 0 then
+                    local args = { ... }
+                    local okF, part = pcall(findHitPart, args, n)
+                    if okF and part then task.spawn(onHit, part) end
+                end
+            end
+            return oldNc(self, ...)
+        end)
+        pcall(function() setreadonly(mt, true) end)
     end)
 
 end)
