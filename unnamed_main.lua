@@ -493912,12 +493912,19 @@ task.spawn(function()
     -- Run auto-load scripts on startup
     if Toggles.IS_AutoLoad then
         task.spawn(function()
-            task.wait(2)
+            -- Wait for saved settings to be restored (1.5s), then honour the
+            -- toggle. This used to run whenever the toggle merely existed, so
+            -- every saved URL was loaded on every injection even with
+            -- "Auto Load on Execute" off - a second script running alongside
+            -- this one crashed the client.
+            task.wait(3)
+            if not Toggles.IS_AutoLoad.Value then return end
             pcall(function()
                 if not isfile(autoLoadFolder .. "/list.txt") then return end
                 local list = readfile(autoLoadFolder .. "/list.txt")
                 for line in list:gmatch("[^\r\n]+") do
-                    if line ~= "" then
+                    -- Never load this script again from its own auto-load list
+                    if line ~= "" and not line:find("unnamed_main", 1, true) then
                         local ok2, err2 = pcall(function()
                             loadstring(game:HttpGet(line))()
                         end)
