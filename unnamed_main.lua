@@ -494703,13 +494703,8 @@ task.spawn(function()
 
     -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
     pcall(function()
-        local mt = getrawmetatable(game)
-        if not mt then return end
-        local oldNc = mt.__namecall
-        if not oldNc then return end
-        setreadonly(mt, false)
-
-        mt.__namecall = newcclosure(function(self, ...)
+        local oldNc
+        local function dataHandler(self, ...)
             local ok, method = pcall(getnamecallmethod)
             if not ok then return oldNc(self, ...) end
 
@@ -494782,9 +494777,32 @@ task.spawn(function()
             end
 
             return table.unpack(results, 1, results.n)
-        end)
+        end
 
-        setreadonly(mt, true)
+        -- Installed only once one of these features is turned on. The hook
+        -- sits in front of every InvokeServer/Invoke call, which yield, and
+        -- some executors crash on yields inside such hooks.
+        local installed = false
+        local function installDataHook()
+            if installed then return end
+            installed = true
+            if type(hookmetamethod) == "function" then
+                oldNc = hookmetamethod(game, "__namecall", newcclosure(dataHandler))
+            else
+                local mt = getrawmetatable(game)
+                oldNc = mt and mt.__namecall
+                if not oldNc then return end
+                setreadonly(mt, false)
+                mt.__namecall = newcclosure(dataHandler)
+                pcall(function() setreadonly(mt, true) end)
+            end
+        end
+        for _, key in ipairs({ "IS_LevelSpoof", "IS_EloSpoof", "IS_WinstreakSpoof", "IS_AvatarSpoof" }) do
+            local t = Toggles[key]
+            if t then
+                t:OnChanged(function(v) if v then pcall(installDataHook) end end)
+            end
+        end
     end)
 
     -- Ping spoof
@@ -494897,12 +494915,15 @@ task.spawn(function()
             return realWait(n, ...)
         end
 
-        pcall(function()
-            task.wait = newcclosure(cappedWait)
-        end)
-        pcall(function()
-            -- override legacy wait in the global environment
-            getgenv().wait = newcclosure(cappedLegacyWait)
+        -- Install only when Fast Attack is first turned on, and as plain Lua
+        -- functions: wrapping a function that yields (task.wait) in
+        -- newcclosure crashes the client on some executors.
+        local installed = false
+        Toggles.IS_FastAtk:OnChanged(function(v)
+            if not v or installed then return end
+            installed = true
+            pcall(function() task.wait = cappedWait end)
+            pcall(function() getgenv().wait = cappedLegacyWait end)
         end)
     end)
 
@@ -494934,9 +494955,12 @@ task.spawn(function()
             Numeric = true,
         })
 
+        local startScan  -- assigned below; scanning only starts on demand
+
         local function ready()
             if rankCharm and consts then return true end
-            lib:Notify("[RankCharm] module not found yet - join a match and try again", 4)
+            if startScan then startScan() end
+            lib:Notify("[RankCharm] searching for the module - try again in a few seconds", 4)
             return false
         end
 
@@ -494997,8 +495021,15 @@ task.spawn(function()
             end
         end)
 
-        -- Find the game's RankCharm module + rank constants via getgc
-        task.spawn(function()
+        -- Find the game's RankCharm module + rank constants via getgc.
+        -- Not at load: a full getgc scan spikes memory and has crashed some
+        -- executors, so it only runs when the user asks for Rank Charm.
+        local scanStarted = false
+        startScan = function()
+            if scanStarted or (rankCharm and consts) then return end
+            scanStarted = true
+            task.spawn(function()
+            pcall(function()
             rcStatus("Scanning...")
             if type(getgc) ~= "function" then
                 rcStatus("No getgc (executor)")
@@ -495088,7 +495119,16 @@ task.spawn(function()
             pcall(function() Options.IS_RCSeason:SetValues(seasons) end)
             pcall(function() Options.IS_RCRank:SetValues(ranks) end)
             pcall(function() Options.IS_RCSeason:SetValue(seasons[1]) end)
-        end)
+            end)
+            scanStarted = false
+            end)
+        end
+
+        rcGroup:AddButton({
+            Text = 'Find Rank Charm',
+            Func = function() startScan() end,
+        })
+        rcSet("press Find Rank Charm")
     end)
 
     -- === NEBULA COUNTER (ue/Kicia/Solix counter + auto swing) ===
@@ -496077,9 +496117,12 @@ task.spawn(function()
             return false
         end
 
-        -- A getgc scan blocks the frame, so only do it once there is an audio
-        -- file to add. Until then just check the folder every 10s (cheap).
-        while not hasAudioFiles() do task.wait(10) end
+        -- A getgc scan blocks the frame and spikes memory (it has crashed
+        -- some executors), so only do it when the user turns on
+        -- "Add files to built-in list" and there is an audio file to add.
+        while not (Toggles.IS_HitListCustom and Toggles.IS_HitListCustom.Value and hasAudioFiles()) do
+            task.wait(3)
+        end
 
         -- Find the table that maps sound names to sounds: it has the built-in
         -- names as keys. One getgc pass, yielding often, behind the shared lock.
@@ -496370,6 +496413,11 @@ task.spawn(function()
                 pcall(function() lib:Notify(("[HitSound] %d file(s) in %s/"):format(#vals - 1, HS_FOLDER), 3) end)
             end,
         })
+        hsGroup:AddToggle('IS_HitListCustom', {
+            Text = 'Add files to built-in list',
+            Default = false,
+            Tooltip = 'Also list the audio files as "custom: <file>" in the built-in hit sound dropdown (scans memory once)',
+        })
         hsGroup:AddToggle('IS_HHSDebug', {
             Text = 'Show hit log',
             Default = false,
@@ -496444,11 +496492,11 @@ task.spawn(function()
             playFile(pick and pick.Value)
         end
 
-        local mt = getrawmetatable(game)
-        local oldNc = mt and mt.__namecall
-        if not oldNc then return end
-        setreadonly(mt, false)
-        mt.__namecall = newcclosure(function(self, ...)
+        -- Install the hook only when Enable is first turned on, so the game
+        -- runs without it unless the feature is used. Prefer the executor's
+        -- hookmetamethod over swapping the metatable field by hand.
+        local oldNc
+        local function handler(self, ...)
             local method = getnamecallmethod()
             if method == "FireServer" and Toggles.IS_HHSEnabled and Toggles.IS_HHSEnabled.Value then
                 -- Forward the call FIRST. findHitPart makes method calls
@@ -496465,8 +496513,26 @@ task.spawn(function()
                 return table.unpack(res, 1, res.n)
             end
             return oldNc(self, ...)
+        end
+
+        local hooked = false
+        local function installHook()
+            if hooked then return end
+            hooked = true
+            if type(hookmetamethod) == "function" then
+                oldNc = hookmetamethod(game, "__namecall", newcclosure(handler))
+            else
+                local mt = getrawmetatable(game)
+                oldNc = mt and mt.__namecall
+                if not oldNc then return end
+                setreadonly(mt, false)
+                mt.__namecall = newcclosure(handler)
+                pcall(function() setreadonly(mt, true) end)
+            end
+        end
+        Toggles.IS_HHSEnabled:OnChanged(function(v)
+            if v then pcall(installHook) end
         end)
-        pcall(function() setreadonly(mt, true) end)
     end)
 
     -- === EXTRA SKIES (added to the skybox dropdown) ===
