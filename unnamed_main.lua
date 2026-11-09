@@ -496449,13 +496449,20 @@ task.spawn(function()
         if not oldNc then return end
         setreadonly(mt, false)
         mt.__namecall = newcclosure(function(self, ...)
-            if Toggles.IS_HHSEnabled and Toggles.IS_HHSEnabled.Value and getnamecallmethod() == "FireServer" then
+            local method = getnamecallmethod()
+            if method == "FireServer" and Toggles.IS_HHSEnabled and Toggles.IS_HHSEnabled.Value then
+                -- Forward the call FIRST. findHitPart makes method calls
+                -- (IsA, FindFirstAncestorOfClass, ...) which overwrite the
+                -- current namecall method; doing that before forwarding made
+                -- the game's FireServer run as the wrong method.
                 local n = select("#", ...)
+                local args = { ... }
+                local res = table.pack(oldNc(self, ...))
                 if n > 0 then
-                    local args = { ... }
                     local okF, part = pcall(findHitPart, args, n)
                     if okF and part then task.spawn(onHit, part) end
                 end
+                return table.unpack(res, 1, res.n)
             end
             return oldNc(self, ...)
         end)
