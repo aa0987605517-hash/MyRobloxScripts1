@@ -493771,28 +493771,6 @@ task.spawn(function()
         Numeric = true,
     })
 
-    infoGroup:AddToggle('IS_EloSpoof', {
-        Text = 'Spoof Ranked ELO',
-        Default = false,
-    })
-    infoGroup:AddInput('IS_EloValue', {
-        Text = 'ELO',
-        Default = '2000',
-        Placeholder = '0-10000',
-        Numeric = true,
-    })
-
-    infoGroup:AddToggle('IS_WinstreakSpoof', {
-        Text = 'Spoof Winstreak',
-        Default = false,
-    })
-    infoGroup:AddInput('IS_WinstreakValue', {
-        Text = 'Winstreak',
-        Default = '50',
-        Placeholder = '0-9999',
-        Numeric = true,
-    })
-
     -- === BADGE SPOOF ===
     local badgeGroup = miscTab:AddLeftGroupbox('Badge Spoof')
 
@@ -493828,20 +493806,6 @@ task.spawn(function()
         Text = 'Ping Level',
         Values = {'Low', 'Medium', 'High'},
         Default = 1,
-    })
-
-    -- === AVATAR SPOOF ===
-    local avatarGroup = miscTab:AddRightGroupbox('Avatar Spoof')
-
-    avatarGroup:AddToggle('IS_AvatarSpoof', {
-        Text = 'Spoof Avatar',
-        Default = false,
-    })
-    avatarGroup:AddInput('IS_AvatarUserId', {
-        Text = 'User ID',
-        Default = '',
-        Placeholder = 'Target UserId',
-        Numeric = true,
     })
 
     -- === SCRIPT LOADER ===
@@ -494274,9 +494238,7 @@ task.spawn(function()
 
     -- Attribute-to-toggle mapping
     local ATTR_MAP = {
-        IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50 end },
         IS_LevelSpoof     = { attr = "Level", getValue = function() return tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
-        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000 end, leaderstat = {"CustomLeaderstats", "Current ELO"} },
         IS_NametagStatus  = { attr = "PlayerStatus", getValue = function() return Options.IS_NametagType and Options.IS_NametagType.Value or "Prime" end },
         IS_Influencer     = { attr = "IsInfluencer", getValue = function() return true end },
         IS_RobloxEmployee = { attr = "IsRobloxEmployee", getValue = function() return true end },
@@ -494339,369 +494301,11 @@ task.spawn(function()
         end
     end
 
-    if Options.IS_WinstreakValue then Options.IS_WinstreakValue:OnChanged(function() reapplyToggle('IS_WinstreakSpoof') end) end
     if Options.IS_LevelValue then Options.IS_LevelValue:OnChanged(function() reapplyToggle('IS_LevelSpoof') end) end
-    if Options.IS_EloValue then Options.IS_EloValue:OnChanged(function() reapplyToggle('IS_EloSpoof') end) end
     if Options.IS_NametagType then Options.IS_NametagType:OnChanged(function() reapplyToggle('IS_NametagStatus') end) end
 
 
-    -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
-    local RunService = game:GetService("RunService")
-    local thumbConns = {}
-    local thumbSpoofActive = false
-    local myIdStr = tostring(LocalPlayer.UserId)
-
-    local function replaceThumbIn(obj)
-        pcall(function()
-            if not (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) then return end
-            local img = obj.Image
-            if type(img) ~= "string" or img == "" then return end
-            if string.find(img, myIdStr, 1, true) then
-                local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                if sid then
-                    obj.Image = string.gsub(img, myIdStr, tostring(sid))
-                end
-            end
-        end)
-    end
-
-    local function startThumbSpoof()
-        if thumbSpoofActive then return end
-        thumbSpoofActive = true
-
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if not playerGui then return end
-
-        for _, obj in ipairs(playerGui:GetDescendants()) do
-            replaceThumbIn(obj)
-        end
-
-        thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
-            replaceThumbIn(obj)
-            task.defer(function() replaceThumbIn(obj) end)
-        end)
-
-        -- Safety-net rescan in its own thread with a long sleep between
-        -- walks so the Rivals PlayerGui (thousands of descendants) doesn't
-        -- stutter the frame. DescendantAdded above handles the common path.
-        -- Also yields inside the loop to spread the work across frames.
-        thumbConns[2] = task.spawn(function()
-            while thumbSpoofActive do
-                task.wait(8)
-                if not thumbSpoofActive then break end
-                pcall(function()
-                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if not sid then return end
-                    local s = tostring(sid)
-                    local n = 0
-                    for _, obj in ipairs(playerGui:GetDescendants()) do
-                        n = n + 1
-                        if n % 400 == 0 then task.wait() end  -- yield every ~400 objects
-                        if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-                            local img = obj.Image
-                            if type(img) == "string" and string.find(img, myIdStr, 1, true) then
-                                obj.Image = string.gsub(img, myIdStr, s)
-                            end
-                        end
-                    end
-                end)
-            end
-        end)
-    end
-
-    local function stopThumbSpoof()
-        thumbSpoofActive = false
-        for _, conn in pairs(thumbConns) do
-            if conn then pcall(function() conn:Disconnect() end) end
-        end
-        thumbConns = {}
-    end
-
-    -- Declared here so the toggle handler below can see it; the methods are
-    -- filled in further down. A `local function` defined later would not be
-    -- visible to this handler, which resolves names at compile time.
-    local AvatarSpoof = {}
-
-    if Toggles.IS_AvatarSpoof then
-        Toggles.IS_AvatarSpoof:OnChanged(function(val)
-            if val then
-                task.spawn(startThumbSpoof)
-                task.spawn(function()
-                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if not sid then
-                        lib:Notify("[CharSpoof] no UserId set", 4)
-                        return
-                    end
-                    local char = LocalPlayer.Character
-                    for i = 1, 30 do
-                        if char then break end
-                        task.wait(0.2)
-                        char = LocalPlayer.Character
-                    end
-                    if not char then
-                        lib:Notify("[CharSpoof] no character", 4)
-                        return
-                    end
-                    local ok, msg = AvatarSpoof.ApplyToCharacter(char, sid)
-                    if ok then
-                        lib:Notify("[CharSpoof] " .. tostring(msg), 3)
-                    else
-                        lib:Notify("[CharSpoof] FAIL: " .. tostring(msg), 5)
-                    end
-                    AvatarSpoof.Watch(char)
-                end)
-            else
-                stopThumbSpoof()
-                task.spawn(function()
-                    local ok, err = pcall(AvatarSpoof.Restore)
-                    if ok then
-                        lib:Notify("[CharSpoof] restored", 2)
-                    else
-                        lib:Notify("[CharSpoof] restore err: " .. tostring(err), 4)
-                    end
-                end)
-            end
-        end)
-    end
-
-    -- (merged into the single handler below)
-
-    -- === AVATAR SPOOF (port of KiciaHook standalone AvatarSpoof) ===
-    AvatarSpoof._spoofedInstances = {}
-    AvatarSpoof._stashed = {}
-    AvatarSpoof._applying = false
-    AvatarSpoof._pending = false
-    AvatarSpoof._watchConn = nil
-
-    function AvatarSpoof._Apply(character, userId)
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then
-            local start = os.clock()
-            repeat
-                humanoid = character:FindFirstChildOfClass("Humanoid")
-                task.wait(0.1)
-            until humanoid or (os.clock() - start > 10)
-        end
-        if not humanoid then return false, "no humanoid" end
-
-        local ok, model = pcall(function()
-            return Players:CreateHumanoidModelFromDescriptionAsync(
-                Players:GetHumanoidDescriptionFromUserId(userId),
-                humanoid.RigType
-            )
-        end)
-        if not ok or not model then
-            return false, tostring(model)
-        end
-
-        local key = character:GetFullName()
-        local prevSpoofed = AvatarSpoof._spoofedInstances[key]
-        local spoofed = {}
-        -- Keep any earlier stash: on a re-apply the genuine originals were
-        -- already taken off the character the first time round.
-        local stashed = AvatarSpoof._stashed[key] or {}
-
-        for _, child in ipairs(character:GetChildren()) do
-            if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                if prevSpoofed and prevSpoofed[child] then
-                    -- ours from a previous apply; drop it rather than stashing it
-                    child:Destroy()
-                else
-                    child.Parent = nil
-                    table.insert(stashed, child)
-                end
-            end
-        end
-
-        local copied = 0
-
-        for _, child in ipairs(model:GetChildren()) do
-            if child:IsA("Accessory") then
-                child.Parent = nil
-                spoofed[child] = true
-
-                local handle = child:FindFirstChild("Handle")
-                if handle and handle:IsA("BasePart") then
-                    for _, w in ipairs(handle:GetChildren()) do
-                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
-                            w:Destroy()
-                        end
-                    end
-
-                    local att = nil
-                    for _, a in ipairs(handle:GetChildren()) do
-                        if a:IsA("Attachment") then att = a; break end
-                    end
-
-                    if att then
-                        local target = nil
-                        for _, part in ipairs(character:GetChildren()) do
-                            if part:IsA("BasePart") then
-                                local found = part:FindFirstChild(att.Name)
-                                if found and found:IsA("Attachment") then
-                                    target = found; break
-                                end
-                            end
-                        end
-
-                        if target then
-                            handle.Anchored = false
-                            local weld = Instance.new("Weld")
-                            weld.Name = "AccessoryWeld"
-                            weld.Part0 = handle
-                            weld.Part1 = target.Parent
-                            weld.C0 = att.CFrame
-                            weld.C1 = target.CFrame
-                            weld.Parent = handle
-                        end
-                    end
-                end
-
-                child.Parent = character
-                copied = copied + 1
-            elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
-                spoofed[child] = true
-                child.Parent = character
-                copied = copied + 1
-            elseif child:IsA("BasePart") then
-                local match = character:FindFirstChild(child.Name)
-                if match and match:IsA("BasePart") then
-                    match.Color = child.Color
-                end
-            end
-        end
-
-        local srcHead = model:FindFirstChild("Head")
-        local dstHead = character:FindFirstChild("Head")
-        if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
-            dstHead.Transparency = srcHead.Transparency
-            if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
-                dstHead.MeshId = srcHead.MeshId
-                dstHead.TextureID = srcHead.TextureID
-            end
-        end
-
-        model:Destroy()
-
-        AvatarSpoof._spoofedInstances[key] = spoofed
-        AvatarSpoof._stashed[key] = stashed
-        return true, "spoofed with " .. copied .. " items"
-    end
-
-    -- Guarded entry point: the watcher below reacts to accessories appearing on
-    -- the character, and _Apply adds some itself, so re-entry must be blocked.
-    function AvatarSpoof.ApplyToCharacter(character, userId)
-        if AvatarSpoof._applying then return false, "already applying" end
-        AvatarSpoof._applying = true
-        local ran, a, b = pcall(AvatarSpoof._Apply, character, userId)
-        AvatarSpoof._applying = false
-        if not ran then return false, tostring(a) end
-        return a, b
-    end
-
-    -- Rivals puts the lobby outfit back on the character between rounds, which
-    -- wipes the spoof. Watch for that and re-apply. Event-driven, so idle cost
-    -- is zero; the debounce lets Rivals finish adding every item first.
-    function AvatarSpoof.Watch(character)
-        if AvatarSpoof._watchConn then
-            pcall(function() AvatarSpoof._watchConn:Disconnect() end)
-            AvatarSpoof._watchConn = nil
-        end
-        if not character then return end
-
-        AvatarSpoof._watchConn = character.ChildAdded:Connect(function(child)
-            if AvatarSpoof._applying or AvatarSpoof._pending then return end
-            if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
-            if not (child:IsA("Accessory") or child:IsA("Shirt")
-                or child:IsA("Pants") or child:IsA("ShirtGraphic")) then return end
-
-            local set = AvatarSpoof._spoofedInstances[character:GetFullName()]
-            if set and set[child] then return end
-
-            AvatarSpoof._pending = true
-            task.spawn(function()
-                task.wait(0.5)
-                AvatarSpoof._pending = false
-                if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
-                local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                local c = LocalPlayer.Character
-                if not uid or not c then return end
-                local okApply, msg = AvatarSpoof.ApplyToCharacter(c, uid)
-                if not okApply then warn("[AvatarSpoof] reapply: " .. tostring(msg)) end
-            end)
-        end)
-    end
-
-    function AvatarSpoof.Restore()
-        local character = LocalPlayer.Character
-
-        if AvatarSpoof._watchConn then
-            pcall(function() AvatarSpoof._watchConn:Disconnect() end)
-            AvatarSpoof._watchConn = nil
-        end
-
-        for _, spoofed in pairs(AvatarSpoof._spoofedInstances) do
-            for item in pairs(spoofed) do
-                pcall(function() item:Destroy() end)
-            end
-        end
-        AvatarSpoof._spoofedInstances = {}
-
-        for _, stashed in pairs(AvatarSpoof._stashed) do
-            for _, item in ipairs(stashed) do
-                pcall(function()
-                    if character then
-                        item.Parent = character
-                    else
-                        item:Destroy()
-                    end
-                end)
-            end
-        end
-        AvatarSpoof._stashed = {}
-    end
-
-    -- Single handler for every scene change: respawn, training, lobby, match.
-    -- Directly re-applies the spoof without going through SetValue so there
-    -- is no SettingValue guard, no UI flicker, and no race with the old thumb
-    -- scanner handler.
-    LocalPlayer.CharacterAdded:Connect(function(char)
-        if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
-        task.spawn(function()
-            -- Reset all per-character state.
-            AvatarSpoof._spoofedInstances = {}
-            AvatarSpoof._stashed         = {}
-            AvatarSpoof._applying        = false
-            AvatarSpoof._pending         = false
-            if AvatarSpoof._watchConn then
-                pcall(function() AvatarSpoof._watchConn:Disconnect() end)
-                AvatarSpoof._watchConn = nil
-            end
-
-            -- Restart the thumbnail scanner immediately.
-            stopThumbSpoof()
-            task.spawn(startThumbSpoof)
-
-            -- Wait for the character rig to load, then a short settle time.
-            pcall(function() char:WaitForChild("HumanoidRootPart", 10) end)
-            task.wait(0.5)
-
-            if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
-
-            local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-            if not sid then lib:Notify("[CharSpoof] no UserId set", 4) return end
-
-            local ok, msg = AvatarSpoof.ApplyToCharacter(char, sid)
-            if ok then
-                lib:Notify("[CharSpoof] reapplied", 3)
-            else
-                lib:Notify("[CharSpoof] reapply fail: " .. tostring(msg), 5)
-            end
-            AvatarSpoof.Watch(char)
-        end)
-    end)
-
-    -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
+    -- === DATA HOOK (Level on profile card) ===
     pcall(function()
         local oldNc
         local function dataHandler(self, ...)
@@ -494709,29 +494313,14 @@ task.spawn(function()
             local ok, method = pcall(getnamecallmethod)
             if not ok then return oldNc(self, ...) end
 
-            if method ~= "GetUserThumbnailAsync" and method ~= "InvokeServer" and method ~= "Invoke" then
+            if method ~= "InvokeServer" and method ~= "Invoke" then
                 return oldNc(self, ...)
             end
 
-            if method == "GetUserThumbnailAsync" then
-                if self == Players and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
-                    local thumbArgs = {...}
-                    local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
-                    if spoofId and thumbArgs[1] == LocalPlayer.UserId then
-                        thumbArgs[1] = spoofId
-                        return oldNc(self, unpack(thumbArgs))
-                    end
-                end
-                return oldNc(self, ...)
-            end
-
-            -- Nothing to patch unless a stats spoof is on. Skipping here avoids
+            -- Nothing to patch unless Level spoof is on. Skipping here avoids
             -- walking every (often large) table the game passes through
             -- InvokeServer / BindableFunction:Invoke, which caused freezes.
-            local anySpoof = (Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value)
-                or (Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value)
-                or (Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value)
-            if not anySpoof then
+            if not (Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value) then
                 return oldNc(self, ...)
             end
 
@@ -494752,22 +494341,10 @@ task.spawn(function()
                         seen[t] = true
                         visited = visited + 1
                         -- Accept both number and string types so we handle any server encoding
-                        local hasLevel  = t.Level ~= nil and (type(t.Level) == "number" or type(t.Level) == "string")
-                        local hasELO    = t.DisplayELO ~= nil
-                        local hasStreak = t.StatisticDuelsWinStreak ~= nil and (type(t.StatisticDuelsWinStreak) == "number" or type(t.StatisticDuelsWinStreak) == "string")
-                        if hasLevel or hasELO or hasStreak then
-                            if hasLevel and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
-                                local v = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
-                                t.Level = type(t.Level) == "string" and tostring(math.floor(v)) or v
-                            end
-                            if hasELO and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
-                                local v = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
-                                t.DisplayELO = type(t.DisplayELO) == "string" and tostring(math.floor(v)) or v
-                            end
-                            if hasStreak and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
-                                local v = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
-                                t.StatisticDuelsWinStreak = type(t.StatisticDuelsWinStreak) == "string" and tostring(math.floor(v)) or v
-                            end
+                        local hasLevel = t.Level ~= nil and (type(t.Level) == "number" or type(t.Level) == "string")
+                        if hasLevel then
+                            local v = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
+                            t.Level = type(t.Level) == "string" and tostring(math.floor(v)) or v
                         end
                         for _, v in pairs(t) do
                             if type(v) == "table" then tryPatch(v, depth + 1) end
@@ -494780,7 +494357,7 @@ task.spawn(function()
             return table.unpack(results, 1, results.n)
         end
 
-        -- Installed only once one of these features is turned on. The hook
+        -- Installed only once Level spoof is turned on. The hook
         -- sits in front of every InvokeServer/Invoke call, which yield, and
         -- some executors crash on yields inside such hooks.
         local installed = false
@@ -494801,7 +494378,7 @@ task.spawn(function()
                 pcall(function() setreadonly(mt, true) end)
             end
         end
-        for _, key in ipairs({ "IS_LevelSpoof", "IS_EloSpoof", "IS_WinstreakSpoof", "IS_AvatarSpoof" }) do
+        for _, key in ipairs({ "IS_LevelSpoof" }) do
             local t = Toggles[key]
             if t then
                 t:OnChanged(function(v) if v then pcall(installDataHook) end end)
