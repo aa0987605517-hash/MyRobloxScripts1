@@ -47,6 +47,26 @@ local arguments = table.pack(...)
 local sharedEnv = getgenv and getgenv() or _G
 local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements')
 
+-- Crash locator: each load step appends a line to workspace/unnamed/boot.log.
+-- After a crash, the last line shows which step was running.
+local function bootLog(msg)
+    pcall(function()
+        local line = ("%.2f %s\n"):format(os.clock(), tostring(msg))
+        if type(appendfile) == "function" then
+            appendfile("unnamed/boot.log", line)
+        else
+            local old = isfile("unnamed/boot.log") and readfile("unnamed/boot.log") or ""
+            writefile("unnamed/boot.log", old .. line)
+        end
+    end)
+end
+sharedEnv.__IS_bootLog = bootLog
+pcall(function()
+    if type(isfolder) == "function" and not isfolder("unnamed") then makefolder("unnamed") end
+    writefile("unnamed/boot.log", "")
+end)
+bootLog("main: start")
+
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
@@ -57,10 +77,12 @@ local alreadyRunning = (type(previous) == 'table' and (previous.status == 'start
 if alreadyRunning then
     local runningBuild = rawget(sharedEnv, 'UE_BUILD')
     if type(runningBuild) == 'number' and runningBuild >= UE_BUILD then
+        bootLog("main: same build already running, stop")
         return previous
     end
 
     -- An older build owns the session: unload its UI and take over.
+    bootLog("main: unloading older running copy")
     local oldLib = rawget(sharedEnv, 'Library')
     if type(oldLib) == 'table' then
         pcall(function() if type(oldLib.Unload) == 'function' then oldLib:Unload() end end)
@@ -493641,7 +493663,9 @@ function Backend.loadProgramData()
     return data
 end
 
+bootLog("main: runApplication")
 local _result = runApplication()
+bootLog("main: runApplication returned")
 
 ------------------------------------------------------------------------
 -- IDENTITY SPOOF MODULE (injected into Misc tab)
@@ -493717,6 +493741,8 @@ task.spawn(function()
     end
 
     local sharedEnv = getgenv and getgenv() or _G
+    local BL = rawget(sharedEnv, "__IS_bootLog") or function() end
+    BL("addons: begin")
     local Players = cloneref(game:GetService("Players"))
     local LocalPlayer = Players.LocalPlayer
 
@@ -493745,6 +493771,7 @@ task.spawn(function()
     -- Create Identity Spoof groupbox
     local spoofGroup = miscTab:AddLeftGroupbox('Identity Spoof')
 
+    BL("section: device spoof")
     -- === DEVICE SPOOF ===
     spoofGroup:AddToggle('IS_DeviceSpoof', {
         Text = 'Device Spoof',
@@ -493756,6 +493783,7 @@ task.spawn(function()
         Default = 1,
     })
 
+    BL("section: player info spoof")
     -- === PLAYER INFO SPOOF ===
     local infoGroup = miscTab:AddRightGroupbox('Player Info Spoof')
 
@@ -493781,6 +493809,7 @@ task.spawn(function()
         Numeric = true,
     })
 
+    BL("section: badge spoof")
     -- === BADGE SPOOF ===
     local badgeGroup = miscTab:AddLeftGroupbox('Badge Spoof')
 
@@ -493807,6 +493836,7 @@ task.spawn(function()
         Default = false,
     })
 
+    BL("section: ping spoof")
     -- === PING SPOOF ===
     badgeGroup:AddToggle('IS_PingSpoof', {
         Text = 'Spoof Ping',
@@ -493818,6 +493848,7 @@ task.spawn(function()
         Default = 1,
     })
 
+    BL("section: script loader")
     -- === SCRIPT LOADER ===
     local loaderGroup = miscTab:AddLeftGroupbox('Script Loader')
 
@@ -493925,6 +493956,7 @@ task.spawn(function()
                 for line in list:gmatch("[^\r\n]+") do
                     -- Never load this script again from its own auto-load list
                     if line ~= "" and not line:find("unnamed_main", 1, true) then
+                        BL("loader: auto-load " .. line)
                         local ok2, err2 = pcall(function()
                             loadstring(game:HttpGet(line))()
                         end)
@@ -493939,6 +493971,7 @@ task.spawn(function()
         end)
     end
 
+    BL("section: skin scanner")
     -- === SKIN SCANNER ===
     local skinGroup = miscTab:AddRightGroupbox('Skin Scanner')
 
@@ -494136,6 +494169,7 @@ task.spawn(function()
         DoubleClick = false,
     })
 
+    BL("section: spoof engine")
     -- === SPOOF ENGINE ===
     local rawget = rawget
     local rawset = rawset
@@ -494324,6 +494358,7 @@ task.spawn(function()
     if Options.IS_NametagType then Options.IS_NametagType:OnChanged(function() reapplyToggle('IS_NametagStatus') end) end
 
 
+    BL("section: data hook")
     -- === DATA HOOK (Level on profile card) ===
     pcall(function()
         local oldNc
@@ -494383,6 +494418,7 @@ task.spawn(function()
         local function installDataHook()
             if installed then return end
             installed = true
+            BL("datahook: install")
             if type(hookmetamethod) == "function" then
                 -- No extra newcclosure: hookmetamethod wraps the function itself,
                 -- and double wrapping breaks yielding calls (WaitForChild,
@@ -494463,6 +494499,7 @@ task.spawn(function()
         end)
     end
 
+    BL("section: fast attack")
     -- === FAST ATTACK (hook task.wait + wait to shrink tool debounce cooldowns) ===
     pcall(function()
         local atkGroup = miscTab:AddLeftGroupbox('Fast Attack')
@@ -494522,11 +494559,13 @@ task.spawn(function()
         Toggles.IS_FastAtk:OnChanged(function(v)
             if not v or installed then return end
             installed = true
+            BL("fastattack: install wait hook")
             pcall(function() task.wait = cappedWait end)
             pcall(function() getgenv().wait = cappedLegacyWait end)
         end)
     end)
 
+    BL("section: rank charm override")
     -- === RANK CHARM OVERRIDE (built into Misc tab) ===
     -- Overrides only show on the Season rank charm you have equipped.
     pcall(function()
@@ -494731,6 +494770,7 @@ task.spawn(function()
         rcSet("press Find Rank Charm")
     end)
 
+    BL("section: nebula counter")
     -- === NEBULA COUNTER (ue/Kicia/Solix counter + auto swing) ===
     pcall(function()
         -- Find the Main tab; fall back to miscTab
@@ -495170,7 +495210,9 @@ task.spawn(function()
 
         -- Load saved values after UI is fully ready
         task.wait(1.5)
+        BL("restore: loading saved settings")
         pcall(loadIS)
+        BL("restore: done")
 
         -- Re-apply features whose enable path isn't triggered by SetValue
         task.wait(0.3)
@@ -495193,6 +495235,7 @@ task.spawn(function()
         end)
     end)
 
+    BL("section: custom background")
     -- === CUSTOM BACKGROUND (in Settings tab) ===
     pcall(function()
         local settingsTab
@@ -495505,6 +495548,7 @@ task.spawn(function()
 
         local function applyBG()
             local enabled = Toggles.IS_BgEnabled and Toggles.IS_BgEnabled.Value
+            if enabled then BL("bg: apply") end
             if not enabled then
                 if bgImage then pcall(function() bgImage:Destroy() end); bgImage = nil end
                 if bgParent and bgOrigBackgroundTransparency ~= nil then
@@ -495674,6 +495718,7 @@ task.spawn(function()
         end)
     end)
 
+    BL("section: custom hit sounds")
     -- === CUSTOM HIT SOUNDS (audio files in workspace/unnamed) ===
     -- Adds every .mp3/.ogg/.wav/.flac in the folder to the existing hit sound
     -- dropdown as "custom: <file>". The script's own hit sound system plays
@@ -495738,6 +495783,7 @@ task.spawn(function()
             return
         end
         pcall(writefile, GUARD, "searching")
+        BL("hitsound: filtergc")
 
         -- Find the table that maps sound names to sounds: it has the built-in
         -- names as keys.
@@ -495771,6 +495817,7 @@ task.spawn(function()
         end
         env.__IS_gcBusy = false
         pcall(writefile, GUARD, "done")  -- search finished without closing the game
+        BL("hitsound: filtergc done")
         if not soundMap then notify("built-in sound table not found", 6) return end
         if type(sample) ~= "string" and type(sample) ~= "table" then
             notify("sound table format (" .. type(sample) .. ") not supported", 6)
@@ -495857,6 +495904,7 @@ task.spawn(function()
         end
     end)
 
+    BL("section: remove map textures")
     -- === REMOVE MAP TEXTURES (World tab) ===
     -- Hides Texture/Decal, clears MeshPart TextureID / SurfaceAppearance and
     -- sets parts to SmoothPlastic. Player characters and the camera
@@ -495954,6 +496002,7 @@ task.spawn(function()
         end
 
         local function enable()
+            BL("textures: enable")
             active = true
             local all = workspace:GetDescendants()
             for i, d in ipairs(all) do
@@ -495988,6 +496037,7 @@ task.spawn(function()
         end)
     end)
 
+    BL("section: extra skies")
     -- === EXTRA SKIES (added to the skybox dropdown) ===
     -- Adds "gray sky" plus 24 preset skies (face IDs from the LYHub/Solix
     -- skybox) to skybox_value. Names the script already has are left to
@@ -496053,8 +496103,11 @@ task.spawn(function()
             local getter = getcustomasset or (syn and syn.getcustomasset)
             if type(getter) ~= "function" or type(writefile) ~= "function" then return end
             if type(isfolder) == "function" and not isfolder("unnamed") then makefolder("unnamed") end
+            BL("sky: write gray image")
             writefile("unnamed/graysky.png", GRAY_PNG)
+            BL("sky: getcustomasset")
             local ok, url = pcall(getter, "unnamed/graysky.png")
+            BL("sky: getcustomasset done")
             if ok and type(url) == "string" and url ~= "" then grayUrl = url end
         end)
 
