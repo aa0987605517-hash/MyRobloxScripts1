@@ -494248,7 +494248,10 @@ task.spawn(function()
 
     -- Attribute-to-toggle mapping
     local ATTR_MAP = {
-        IS_LevelSpoof     = { attr = "Level", getValue = function() return tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
+        -- IS_LevelSpoof is not here on purpose: changing the player's Level
+        -- attribute / leaderstat got the client kicked back to the Roblox
+        -- home page right away. Level spoof only patches profile data now
+        -- (see DATA HOOK).
         IS_NametagStatus  = { attr = "PlayerStatus", getValue = function() return Options.IS_NametagType and Options.IS_NametagType.Value or "Prime" end },
         IS_Influencer     = { attr = "IsInfluencer", getValue = function() return true end },
         IS_RobloxEmployee = { attr = "IsRobloxEmployee", getValue = function() return true end },
@@ -494311,7 +494314,6 @@ task.spawn(function()
         end
     end
 
-    if Options.IS_LevelValue then Options.IS_LevelValue:OnChanged(function() reapplyToggle('IS_LevelSpoof') end) end
     if Options.IS_NametagType then Options.IS_NametagType:OnChanged(function() reapplyToggle('IS_NametagStatus') end) end
 
 
