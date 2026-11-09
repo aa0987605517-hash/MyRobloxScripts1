@@ -47,26 +47,6 @@ local arguments = table.pack(...)
 local sharedEnv = getgenv and getgenv() or _G
 local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements')
 
--- Crash locator: each load step appends a line to workspace/unnamed/boot.log.
--- After a crash, the last line shows which step was running.
-local function bootLog(msg)
-    pcall(function()
-        local line = ("%.2f %s\n"):format(os.clock(), tostring(msg))
-        if type(appendfile) == "function" then
-            appendfile("unnamed/boot.log", line)
-        else
-            local old = isfile("unnamed/boot.log") and readfile("unnamed/boot.log") or ""
-            writefile("unnamed/boot.log", old .. line)
-        end
-    end)
-end
-sharedEnv.__IS_bootLog = bootLog
-pcall(function()
-    if type(isfolder) == "function" and not isfolder("unnamed") then makefolder("unnamed") end
-    writefile("unnamed/boot.log", "")
-end)
-bootLog("main: start")
-
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
@@ -77,12 +57,10 @@ local alreadyRunning = (type(previous) == 'table' and (previous.status == 'start
 if alreadyRunning then
     local runningBuild = rawget(sharedEnv, 'UE_BUILD')
     if type(runningBuild) == 'number' and runningBuild >= UE_BUILD then
-        bootLog("main: same build already running, stop")
         return previous
     end
 
     -- An older build owns the session: unload its UI and take over.
-    bootLog("main: unloading older running copy")
     local oldLib = rawget(sharedEnv, 'Library')
     if type(oldLib) == 'table' then
         pcall(function() if type(oldLib.Unload) == 'function' then oldLib:Unload() end end)
@@ -493663,9 +493641,7 @@ function Backend.loadProgramData()
     return data
 end
 
-bootLog("main: runApplication")
 local _result = runApplication()
-bootLog("main: runApplication returned")
 
 ------------------------------------------------------------------------
 -- IDENTITY SPOOF MODULE (injected into Misc tab)
@@ -493730,19 +493706,7 @@ end)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 task.spawn(function()
-    -- Safe mode: with workspace/unnamed/safemode.txt present, none of the
-    -- added features (Misc/Main/Settings/World additions, hooks, scans,
-    -- skies...) load - only the original script runs. Used to tell whether
-    -- a crash comes from these additions or from somewhere else.
-    local safeOk, safe = pcall(function() return isfile and isfile("unnamed/safemode.txt") end)
-    if safeOk and safe then
-        warn("[Addons] safe mode: unnamed/safemode.txt found, add-on features not loaded")
-        return
-    end
-
     local sharedEnv = getgenv and getgenv() or _G
-    local BL = rawget(sharedEnv, "__IS_bootLog") or function() end
-    BL("addons: begin")
     local Players = cloneref(game:GetService("Players"))
     local LocalPlayer = Players.LocalPlayer
 
@@ -493771,7 +493735,6 @@ task.spawn(function()
     -- Create Identity Spoof groupbox
     local spoofGroup = miscTab:AddLeftGroupbox('Identity Spoof')
 
-    BL("section: device spoof")
     -- === DEVICE SPOOF ===
     spoofGroup:AddToggle('IS_DeviceSpoof', {
         Text = 'Device Spoof',
@@ -493783,7 +493746,6 @@ task.spawn(function()
         Default = 1,
     })
 
-    BL("section: player info spoof")
     -- === PLAYER INFO SPOOF ===
     local infoGroup = miscTab:AddRightGroupbox('Player Info Spoof')
 
@@ -493809,7 +493771,28 @@ task.spawn(function()
         Numeric = true,
     })
 
-    BL("section: badge spoof")
+    infoGroup:AddToggle('IS_EloSpoof', {
+        Text = 'Spoof Ranked ELO',
+        Default = false,
+    })
+    infoGroup:AddInput('IS_EloValue', {
+        Text = 'ELO',
+        Default = '2000',
+        Placeholder = '0-10000',
+        Numeric = true,
+    })
+
+    infoGroup:AddToggle('IS_WinstreakSpoof', {
+        Text = 'Spoof Winstreak',
+        Default = false,
+    })
+    infoGroup:AddInput('IS_WinstreakValue', {
+        Text = 'Winstreak',
+        Default = '50',
+        Placeholder = '0-9999',
+        Numeric = true,
+    })
+
     -- === BADGE SPOOF ===
     local badgeGroup = miscTab:AddLeftGroupbox('Badge Spoof')
 
@@ -493836,7 +493819,6 @@ task.spawn(function()
         Default = false,
     })
 
-    BL("section: ping spoof")
     -- === PING SPOOF ===
     badgeGroup:AddToggle('IS_PingSpoof', {
         Text = 'Spoof Ping',
@@ -493848,7 +493830,20 @@ task.spawn(function()
         Default = 1,
     })
 
-    BL("section: script loader")
+    -- === AVATAR SPOOF ===
+    local avatarGroup = miscTab:AddRightGroupbox('Avatar Spoof')
+
+    avatarGroup:AddToggle('IS_AvatarSpoof', {
+        Text = 'Spoof Avatar',
+        Default = false,
+    })
+    avatarGroup:AddInput('IS_AvatarUserId', {
+        Text = 'User ID',
+        Default = '',
+        Placeholder = 'Target UserId',
+        Numeric = true,
+    })
+
     -- === SCRIPT LOADER ===
     local loaderGroup = miscTab:AddLeftGroupbox('Script Loader')
 
@@ -493943,20 +493938,12 @@ task.spawn(function()
     -- Run auto-load scripts on startup
     if Toggles.IS_AutoLoad then
         task.spawn(function()
-            -- Wait for saved settings to be restored (1.5s), then honour the
-            -- toggle. This used to run whenever the toggle merely existed, so
-            -- every saved URL was loaded on every injection even with
-            -- "Auto Load on Execute" off - a second script running alongside
-            -- this one crashed the client.
-            task.wait(3)
-            if not Toggles.IS_AutoLoad.Value then return end
+            task.wait(2)
             pcall(function()
                 if not isfile(autoLoadFolder .. "/list.txt") then return end
                 local list = readfile(autoLoadFolder .. "/list.txt")
                 for line in list:gmatch("[^\r\n]+") do
-                    -- Never load this script again from its own auto-load list
-                    if line ~= "" and not line:find("unnamed_main", 1, true) then
-                        BL("loader: auto-load " .. line)
+                    if line ~= "" then
                         local ok2, err2 = pcall(function()
                             loadstring(game:HttpGet(line))()
                         end)
@@ -493971,7 +493958,6 @@ task.spawn(function()
         end)
     end
 
-    BL("section: skin scanner")
     -- === SKIN SCANNER ===
     local skinGroup = miscTab:AddRightGroupbox('Skin Scanner')
 
@@ -494169,7 +494155,6 @@ task.spawn(function()
         DoubleClick = false,
     })
 
-    BL("section: spoof engine")
     -- === SPOOF ENGINE ===
     local rawget = rawget
     local rawset = rawset
@@ -494289,10 +494274,9 @@ task.spawn(function()
 
     -- Attribute-to-toggle mapping
     local ATTR_MAP = {
-        -- IS_LevelSpoof is not here on purpose: changing the player's Level
-        -- attribute / leaderstat got the client kicked back to the Roblox
-        -- home page right away. Level spoof only patches profile data now
-        -- (see DATA HOOK).
+        IS_WinstreakSpoof = { attr = "StatisticDuelsWinStreak", getValue = function() return tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50 end },
+        IS_LevelSpoof     = { attr = "Level", getValue = function() return tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100 end, leaderstat = {"CustomLeaderstats", "Level"} },
+        IS_EloSpoof       = { attr = "DisplayELO", getValue = function() return tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000 end, leaderstat = {"CustomLeaderstats", "Current ELO"} },
         IS_NametagStatus  = { attr = "PlayerStatus", getValue = function() return Options.IS_NametagType and Options.IS_NametagType.Value or "Prime" end },
         IS_Influencer     = { attr = "IsInfluencer", getValue = function() return true end },
         IS_RobloxEmployee = { attr = "IsRobloxEmployee", getValue = function() return true end },
@@ -494355,26 +494339,403 @@ task.spawn(function()
         end
     end
 
+    if Options.IS_WinstreakValue then Options.IS_WinstreakValue:OnChanged(function() reapplyToggle('IS_WinstreakSpoof') end) end
+    if Options.IS_LevelValue then Options.IS_LevelValue:OnChanged(function() reapplyToggle('IS_LevelSpoof') end) end
+    if Options.IS_EloValue then Options.IS_EloValue:OnChanged(function() reapplyToggle('IS_EloSpoof') end) end
     if Options.IS_NametagType then Options.IS_NametagType:OnChanged(function() reapplyToggle('IS_NametagStatus') end) end
 
 
-    BL("section: data hook")
-    -- === DATA HOOK (Level on profile card) ===
+    -- === THUMBNAIL SPOOF (replace avatar icon in GUI) ===
+    local RunService = game:GetService("RunService")
+    local thumbConns = {}
+    local thumbSpoofActive = false
+    local myIdStr = tostring(LocalPlayer.UserId)
+
+    local function replaceThumbIn(obj)
+        pcall(function()
+            if not (obj:IsA("ImageLabel") or obj:IsA("ImageButton")) then return end
+            local img = obj.Image
+            if type(img) ~= "string" or img == "" then return end
+            if string.find(img, myIdStr, 1, true) then
+                local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                if sid then
+                    obj.Image = string.gsub(img, myIdStr, tostring(sid))
+                end
+            end
+        end)
+    end
+
+    local function startThumbSpoof()
+        if thumbSpoofActive then return end
+        thumbSpoofActive = true
+
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        for _, obj in ipairs(playerGui:GetDescendants()) do
+            replaceThumbIn(obj)
+        end
+
+        thumbConns[1] = playerGui.DescendantAdded:Connect(function(obj)
+            replaceThumbIn(obj)
+            task.defer(function() replaceThumbIn(obj) end)
+        end)
+
+        -- Safety-net rescan in its own thread with a long sleep between
+        -- walks so the Rivals PlayerGui (thousands of descendants) doesn't
+        -- stutter the frame. DescendantAdded above handles the common path.
+        -- Also yields inside the loop to spread the work across frames.
+        thumbConns[2] = task.spawn(function()
+            while thumbSpoofActive do
+                task.wait(8)
+                if not thumbSpoofActive then break end
+                pcall(function()
+                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if not sid then return end
+                    local s = tostring(sid)
+                    local n = 0
+                    for _, obj in ipairs(playerGui:GetDescendants()) do
+                        n = n + 1
+                        if n % 400 == 0 then task.wait() end  -- yield every ~400 objects
+                        if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                            local img = obj.Image
+                            if type(img) == "string" and string.find(img, myIdStr, 1, true) then
+                                obj.Image = string.gsub(img, myIdStr, s)
+                            end
+                        end
+                    end
+                end)
+            end
+        end)
+    end
+
+    local function stopThumbSpoof()
+        thumbSpoofActive = false
+        for _, conn in pairs(thumbConns) do
+            if conn then pcall(function() conn:Disconnect() end) end
+        end
+        thumbConns = {}
+    end
+
+    -- Declared here so the toggle handler below can see it; the methods are
+    -- filled in further down. A `local function` defined later would not be
+    -- visible to this handler, which resolves names at compile time.
+    local AvatarSpoof = {}
+
+    if Toggles.IS_AvatarSpoof then
+        Toggles.IS_AvatarSpoof:OnChanged(function(val)
+            if val then
+                task.spawn(startThumbSpoof)
+                task.spawn(function()
+                    local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if not sid then
+                        lib:Notify("[CharSpoof] no UserId set", 4)
+                        return
+                    end
+                    local char = LocalPlayer.Character
+                    for i = 1, 30 do
+                        if char then break end
+                        task.wait(0.2)
+                        char = LocalPlayer.Character
+                    end
+                    if not char then
+                        lib:Notify("[CharSpoof] no character", 4)
+                        return
+                    end
+                    local ok, msg = AvatarSpoof.ApplyToCharacter(char, sid)
+                    if ok then
+                        lib:Notify("[CharSpoof] " .. tostring(msg), 3)
+                    else
+                        lib:Notify("[CharSpoof] FAIL: " .. tostring(msg), 5)
+                    end
+                    AvatarSpoof.Watch(char)
+                end)
+            else
+                stopThumbSpoof()
+                task.spawn(function()
+                    local ok, err = pcall(AvatarSpoof.Restore)
+                    if ok then
+                        lib:Notify("[CharSpoof] restored", 2)
+                    else
+                        lib:Notify("[CharSpoof] restore err: " .. tostring(err), 4)
+                    end
+                end)
+            end
+        end)
+    end
+
+    -- (merged into the single handler below)
+
+    -- === AVATAR SPOOF (port of KiciaHook standalone AvatarSpoof) ===
+    AvatarSpoof._spoofedInstances = {}
+    AvatarSpoof._stashed = {}
+    AvatarSpoof._applying = false
+    AvatarSpoof._pending = false
+    AvatarSpoof._watchConn = nil
+
+    function AvatarSpoof._Apply(character, userId)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            local start = os.clock()
+            repeat
+                humanoid = character:FindFirstChildOfClass("Humanoid")
+                task.wait(0.1)
+            until humanoid or (os.clock() - start > 10)
+        end
+        if not humanoid then return false, "no humanoid" end
+
+        local ok, model = pcall(function()
+            return Players:CreateHumanoidModelFromDescriptionAsync(
+                Players:GetHumanoidDescriptionFromUserId(userId),
+                humanoid.RigType
+            )
+        end)
+        if not ok or not model then
+            return false, tostring(model)
+        end
+
+        local key = character:GetFullName()
+        local prevSpoofed = AvatarSpoof._spoofedInstances[key]
+        local spoofed = {}
+        -- Keep any earlier stash: on a re-apply the genuine originals were
+        -- already taken off the character the first time round.
+        local stashed = AvatarSpoof._stashed[key] or {}
+
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                if prevSpoofed and prevSpoofed[child] then
+                    -- ours from a previous apply; drop it rather than stashing it
+                    child:Destroy()
+                else
+                    child.Parent = nil
+                    table.insert(stashed, child)
+                end
+            end
+        end
+
+        local copied = 0
+
+        for _, child in ipairs(model:GetChildren()) do
+            if child:IsA("Accessory") then
+                child.Parent = nil
+                spoofed[child] = true
+
+                local handle = child:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    for _, w in ipairs(handle:GetChildren()) do
+                        if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("ManualWeld") then
+                            w:Destroy()
+                        end
+                    end
+
+                    local att = nil
+                    for _, a in ipairs(handle:GetChildren()) do
+                        if a:IsA("Attachment") then att = a; break end
+                    end
+
+                    if att then
+                        local target = nil
+                        for _, part in ipairs(character:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                local found = part:FindFirstChild(att.Name)
+                                if found and found:IsA("Attachment") then
+                                    target = found; break
+                                end
+                            end
+                        end
+
+                        if target then
+                            handle.Anchored = false
+                            local weld = Instance.new("Weld")
+                            weld.Name = "AccessoryWeld"
+                            weld.Part0 = handle
+                            weld.Part1 = target.Parent
+                            weld.C0 = att.CFrame
+                            weld.C1 = target.CFrame
+                            weld.Parent = handle
+                        end
+                    end
+                end
+
+                child.Parent = character
+                copied = copied + 1
+            elseif child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                spoofed[child] = true
+                child.Parent = character
+                copied = copied + 1
+            elseif child:IsA("BasePart") then
+                local match = character:FindFirstChild(child.Name)
+                if match and match:IsA("BasePart") then
+                    match.Color = child.Color
+                end
+            end
+        end
+
+        local srcHead = model:FindFirstChild("Head")
+        local dstHead = character:FindFirstChild("Head")
+        if srcHead and dstHead and srcHead:IsA("BasePart") and dstHead:IsA("BasePart") then
+            dstHead.Transparency = srcHead.Transparency
+            if srcHead:IsA("MeshPart") and dstHead:IsA("MeshPart") then
+                dstHead.MeshId = srcHead.MeshId
+                dstHead.TextureID = srcHead.TextureID
+            end
+        end
+
+        model:Destroy()
+
+        AvatarSpoof._spoofedInstances[key] = spoofed
+        AvatarSpoof._stashed[key] = stashed
+        return true, "spoofed with " .. copied .. " items"
+    end
+
+    -- Guarded entry point: the watcher below reacts to accessories appearing on
+    -- the character, and _Apply adds some itself, so re-entry must be blocked.
+    function AvatarSpoof.ApplyToCharacter(character, userId)
+        if AvatarSpoof._applying then return false, "already applying" end
+        AvatarSpoof._applying = true
+        local ran, a, b = pcall(AvatarSpoof._Apply, character, userId)
+        AvatarSpoof._applying = false
+        if not ran then return false, tostring(a) end
+        return a, b
+    end
+
+    -- Rivals puts the lobby outfit back on the character between rounds, which
+    -- wipes the spoof. Watch for that and re-apply. Event-driven, so idle cost
+    -- is zero; the debounce lets Rivals finish adding every item first.
+    function AvatarSpoof.Watch(character)
+        if AvatarSpoof._watchConn then
+            pcall(function() AvatarSpoof._watchConn:Disconnect() end)
+            AvatarSpoof._watchConn = nil
+        end
+        if not character then return end
+
+        AvatarSpoof._watchConn = character.ChildAdded:Connect(function(child)
+            if AvatarSpoof._applying or AvatarSpoof._pending then return end
+            if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+            if not (child:IsA("Accessory") or child:IsA("Shirt")
+                or child:IsA("Pants") or child:IsA("ShirtGraphic")) then return end
+
+            local set = AvatarSpoof._spoofedInstances[character:GetFullName()]
+            if set and set[child] then return end
+
+            AvatarSpoof._pending = true
+            task.spawn(function()
+                task.wait(0.5)
+                AvatarSpoof._pending = false
+                if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+                local uid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                local c = LocalPlayer.Character
+                if not uid or not c then return end
+                local okApply, msg = AvatarSpoof.ApplyToCharacter(c, uid)
+                if not okApply then warn("[AvatarSpoof] reapply: " .. tostring(msg)) end
+            end)
+        end)
+    end
+
+    function AvatarSpoof.Restore()
+        local character = LocalPlayer.Character
+
+        if AvatarSpoof._watchConn then
+            pcall(function() AvatarSpoof._watchConn:Disconnect() end)
+            AvatarSpoof._watchConn = nil
+        end
+
+        for _, spoofed in pairs(AvatarSpoof._spoofedInstances) do
+            for item in pairs(spoofed) do
+                pcall(function() item:Destroy() end)
+            end
+        end
+        AvatarSpoof._spoofedInstances = {}
+
+        for _, stashed in pairs(AvatarSpoof._stashed) do
+            for _, item in ipairs(stashed) do
+                pcall(function()
+                    if character then
+                        item.Parent = character
+                    else
+                        item:Destroy()
+                    end
+                end)
+            end
+        end
+        AvatarSpoof._stashed = {}
+    end
+
+    -- Single handler for every scene change: respawn, training, lobby, match.
+    -- Directly re-applies the spoof without going through SetValue so there
+    -- is no SettingValue guard, no UI flicker, and no race with the old thumb
+    -- scanner handler.
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+        task.spawn(function()
+            -- Reset all per-character state.
+            AvatarSpoof._spoofedInstances = {}
+            AvatarSpoof._stashed         = {}
+            AvatarSpoof._applying        = false
+            AvatarSpoof._pending         = false
+            if AvatarSpoof._watchConn then
+                pcall(function() AvatarSpoof._watchConn:Disconnect() end)
+                AvatarSpoof._watchConn = nil
+            end
+
+            -- Restart the thumbnail scanner immediately.
+            stopThumbSpoof()
+            task.spawn(startThumbSpoof)
+
+            -- Wait for the character rig to load, then a short settle time.
+            pcall(function() char:WaitForChild("HumanoidRootPart", 10) end)
+            task.wait(0.5)
+
+            if not (Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value) then return end
+
+            local sid = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+            if not sid then lib:Notify("[CharSpoof] no UserId set", 4) return end
+
+            local ok, msg = AvatarSpoof.ApplyToCharacter(char, sid)
+            if ok then
+                lib:Notify("[CharSpoof] reapplied", 3)
+            else
+                lib:Notify("[CharSpoof] reapply fail: " .. tostring(msg), 5)
+            end
+            AvatarSpoof.Watch(char)
+        end)
+    end)
+
+    -- === DATA HOOK (Level/ELO/Winstreak on profile card + thumbnail) ===
     pcall(function()
-        local oldNc
-        local function dataHandler(self, ...)
-            if checkcaller and checkcaller() then return oldNc(self, ...) end
+        local mt = getrawmetatable(game)
+        if not mt then return end
+        local oldNc = mt.__namecall
+        if not oldNc then return end
+        setreadonly(mt, false)
+
+        mt.__namecall = newcclosure(function(self, ...)
             local ok, method = pcall(getnamecallmethod)
             if not ok then return oldNc(self, ...) end
 
-            if method ~= "InvokeServer" and method ~= "Invoke" then
+            if method ~= "GetUserThumbnailAsync" and method ~= "InvokeServer" and method ~= "Invoke" then
                 return oldNc(self, ...)
             end
 
-            -- Nothing to patch unless Level spoof is on. Skipping here avoids
+            if method == "GetUserThumbnailAsync" then
+                if self == Players and Toggles.IS_AvatarSpoof and Toggles.IS_AvatarSpoof.Value then
+                    local thumbArgs = {...}
+                    local spoofId = tonumber(Options.IS_AvatarUserId and Options.IS_AvatarUserId.Value)
+                    if spoofId and thumbArgs[1] == LocalPlayer.UserId then
+                        thumbArgs[1] = spoofId
+                        return oldNc(self, unpack(thumbArgs))
+                    end
+                end
+                return oldNc(self, ...)
+            end
+
+            -- Nothing to patch unless a stats spoof is on. Skipping here avoids
             -- walking every (often large) table the game passes through
             -- InvokeServer / BindableFunction:Invoke, which caused freezes.
-            if not (Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value) then
+            local anySpoof = (Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value)
+                or (Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value)
+                or (Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value)
+            if not anySpoof then
                 return oldNc(self, ...)
             end
 
@@ -494395,10 +494756,22 @@ task.spawn(function()
                         seen[t] = true
                         visited = visited + 1
                         -- Accept both number and string types so we handle any server encoding
-                        local hasLevel = t.Level ~= nil and (type(t.Level) == "number" or type(t.Level) == "string")
-                        if hasLevel then
-                            local v = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
-                            t.Level = type(t.Level) == "string" and tostring(math.floor(v)) or v
+                        local hasLevel  = t.Level ~= nil and (type(t.Level) == "number" or type(t.Level) == "string")
+                        local hasELO    = t.DisplayELO ~= nil
+                        local hasStreak = t.StatisticDuelsWinStreak ~= nil and (type(t.StatisticDuelsWinStreak) == "number" or type(t.StatisticDuelsWinStreak) == "string")
+                        if hasLevel or hasELO or hasStreak then
+                            if hasLevel and Toggles.IS_LevelSpoof and Toggles.IS_LevelSpoof.Value then
+                                local v = tonumber(Options.IS_LevelValue and Options.IS_LevelValue.Value) or 100
+                                t.Level = type(t.Level) == "string" and tostring(math.floor(v)) or v
+                            end
+                            if hasELO and Toggles.IS_EloSpoof and Toggles.IS_EloSpoof.Value then
+                                local v = tonumber(Options.IS_EloValue and Options.IS_EloValue.Value) or 2000
+                                t.DisplayELO = type(t.DisplayELO) == "string" and tostring(math.floor(v)) or v
+                            end
+                            if hasStreak and Toggles.IS_WinstreakSpoof and Toggles.IS_WinstreakSpoof.Value then
+                                local v = tonumber(Options.IS_WinstreakValue and Options.IS_WinstreakValue.Value) or 50
+                                t.StatisticDuelsWinStreak = type(t.StatisticDuelsWinStreak) == "string" and tostring(math.floor(v)) or v
+                            end
                         end
                         for _, v in pairs(t) do
                             if type(v) == "table" then tryPatch(v, depth + 1) end
@@ -494409,36 +494782,9 @@ task.spawn(function()
             end
 
             return table.unpack(results, 1, results.n)
-        end
+        end)
 
-        -- Installed only once Level spoof is turned on. The hook
-        -- sits in front of every InvokeServer/Invoke call, which yield, and
-        -- some executors crash on yields inside such hooks.
-        local installed = false
-        local function installDataHook()
-            if installed then return end
-            installed = true
-            BL("datahook: install")
-            if type(hookmetamethod) == "function" then
-                -- No extra newcclosure: hookmetamethod wraps the function itself,
-                -- and double wrapping breaks yielding calls (WaitForChild,
-                -- InvokeServer) on some executors, crashing the client.
-                oldNc = hookmetamethod(game, "__namecall", dataHandler)
-            else
-                local mt = getrawmetatable(game)
-                oldNc = mt and mt.__namecall
-                if not oldNc then return end
-                setreadonly(mt, false)
-                mt.__namecall = newcclosure(dataHandler)
-                pcall(function() setreadonly(mt, true) end)
-            end
-        end
-        for _, key in ipairs({ "IS_LevelSpoof" }) do
-            local t = Toggles[key]
-            if t then
-                t:OnChanged(function(v) if v then pcall(installDataHook) end end)
-            end
-        end
+        setreadonly(mt, true)
     end)
 
     -- Ping spoof
@@ -494499,7 +494845,6 @@ task.spawn(function()
         end)
     end
 
-    BL("section: fast attack")
     -- === FAST ATTACK (hook task.wait + wait to shrink tool debounce cooldowns) ===
     pcall(function()
         local atkGroup = miscTab:AddLeftGroupbox('Fast Attack')
@@ -494552,20 +494897,15 @@ task.spawn(function()
             return realWait(n, ...)
         end
 
-        -- Install only when Fast Attack is first turned on, and as plain Lua
-        -- functions: wrapping a function that yields (task.wait) in
-        -- newcclosure crashes the client on some executors.
-        local installed = false
-        Toggles.IS_FastAtk:OnChanged(function(v)
-            if not v or installed then return end
-            installed = true
-            BL("fastattack: install wait hook")
-            pcall(function() task.wait = cappedWait end)
-            pcall(function() getgenv().wait = cappedLegacyWait end)
+        pcall(function()
+            task.wait = newcclosure(cappedWait)
+        end)
+        pcall(function()
+            -- override legacy wait in the global environment
+            getgenv().wait = newcclosure(cappedLegacyWait)
         end)
     end)
 
-    BL("section: rank charm override")
     -- === RANK CHARM OVERRIDE (built into Misc tab) ===
     -- Overrides only show on the Season rank charm you have equipped.
     pcall(function()
@@ -494594,12 +494934,9 @@ task.spawn(function()
             Numeric = true,
         })
 
-        local startScan  -- assigned below; scanning only starts on demand
-
         local function ready()
             if rankCharm and consts then return true end
-            if startScan then startScan() end
-            lib:Notify("[RankCharm] searching for the module - try again in a few seconds", 4)
+            lib:Notify("[RankCharm] module not found yet - join a match and try again", 4)
             return false
         end
 
@@ -494660,15 +494997,8 @@ task.spawn(function()
             end
         end)
 
-        -- Find the game's RankCharm module + rank constants via getgc.
-        -- Not at load: a full getgc scan spikes memory and has crashed some
-        -- executors, so it only runs when the user asks for Rank Charm.
-        local scanStarted = false
-        startScan = function()
-            if scanStarted or (rankCharm and consts) then return end
-            scanStarted = true
-            task.spawn(function()
-            pcall(function()
+        -- Find the game's RankCharm module + rank constants via getgc
+        task.spawn(function()
             rcStatus("Scanning...")
             if type(getgc) ~= "function" then
                 rcStatus("No getgc (executor)")
@@ -494758,19 +495088,9 @@ task.spawn(function()
             pcall(function() Options.IS_RCSeason:SetValues(seasons) end)
             pcall(function() Options.IS_RCRank:SetValues(ranks) end)
             pcall(function() Options.IS_RCSeason:SetValue(seasons[1]) end)
-            end)
-            scanStarted = false
-            end)
-        end
-
-        rcGroup:AddButton({
-            Text = 'Find Rank Charm',
-            Func = function() startScan() end,
-        })
-        rcSet("press Find Rank Charm")
+        end)
     end)
 
-    BL("section: nebula counter")
     -- === NEBULA COUNTER (ue/Kicia/Solix counter + auto swing) ===
     pcall(function()
         -- Find the Main tab; fall back to miscTab
@@ -495210,9 +495530,7 @@ task.spawn(function()
 
         -- Load saved values after UI is fully ready
         task.wait(1.5)
-        BL("restore: loading saved settings")
         pcall(loadIS)
-        BL("restore: done")
 
         -- Re-apply features whose enable path isn't triggered by SetValue
         task.wait(0.3)
@@ -495235,7 +495553,6 @@ task.spawn(function()
         end)
     end)
 
-    BL("section: custom background")
     -- === CUSTOM BACKGROUND (in Settings tab) ===
     pcall(function()
         local settingsTab
@@ -495548,7 +495865,6 @@ task.spawn(function()
 
         local function applyBG()
             local enabled = Toggles.IS_BgEnabled and Toggles.IS_BgEnabled.Value
-            if enabled then BL("bg: apply") end
             if not enabled then
                 if bgImage then pcall(function() bgImage:Destroy() end); bgImage = nil end
                 if bgParent and bgOrigBackgroundTransparency ~= nil then
@@ -495717,30 +496033,19 @@ task.spawn(function()
             end
         end)
     end)
-
-    BL("section: custom hit sounds")
     -- === CUSTOM HIT SOUNDS (audio files in workspace/unnamed) ===
     -- Adds every .mp3/.ogg/.wav/.flac in the folder to the existing hit sound
     -- dropdown as "custom: <file>". The script's own hit sound system plays
     -- them, so the volume slider and preview button keep working.
-    -- Finding the script's sound table uses filtergc only: walking a full
-    -- getgc list is what sent the game back to the Roblox home page on load.
-    -- A lock file guards against a crash: if the previous search never
-    -- finished, the feature is skipped on the next load.
     task.spawn(function()
         local SND_FOLDER = "unnamed"
         local PREFIX = "custom: "
         local SEL_FILE = SND_FOLDER .. "/hitsound_selected.txt"
-        local GUARD = SND_FOLDER .. "/hitsound_scan.lock"
         local function notify(m, s) pcall(function() lib:Notify("[HitSound] " .. m, s or 4) end) end
 
         local getter = getcustomasset or (syn and syn.getcustomasset)
-        if type(getter) ~= "function" or type(listfiles) ~= "function" then
-            notify("executor lacks getcustomasset / listfiles", 6)
-            return
-        end
-        if type(filtergc) ~= "function" then
-            notify("executor has no filtergc - custom hit sounds unavailable", 6)
+        if type(getter) ~= "function" or type(listfiles) ~= "function" or type(getgc) ~= "function" then
+            notify("executor lacks getcustomasset / listfiles / getgc", 6)
             return
         end
 
@@ -495772,52 +496077,39 @@ task.spawn(function()
             return false
         end
 
-        -- Only search once there is an audio file to add
+        -- A getgc scan blocks the frame, so only do it once there is an audio
+        -- file to add. Until then just check the folder every 10s (cheap).
         while not hasAudioFiles() do task.wait(10) end
 
-        -- Crash guard: "searching" left in the lock file means the last
-        -- search never finished (the game closed), so don't try again.
-        local okG, guardText = pcall(function() return isfile(GUARD) and readfile(GUARD) or "" end)
-        if okG and guardText == "searching" then
-            notify("skipped: the last search closed the game. Delete unnamed/hitsound_scan.lock to retry", 8)
-            return
-        end
-        pcall(writefile, GUARD, "searching")
-        BL("hitsound: filtergc")
-
         -- Find the table that maps sound names to sounds: it has the built-in
-        -- names as keys.
+        -- names as keys. One getgc pass, yielding often, behind the shared lock.
         local probe = math.min(#baseNames, 6)
         local soundMap, sample
         local env = getgenv()
         while env.__IS_gcBusy do task.wait(0.5) end
         env.__IS_gcBusy = true
-        local function isSoundMap(obj)
-            if type(obj) ~= "table" or obj == dd or obj == dd.Values then return false end
-            for i = 1, probe do
-                if rawget(obj, baseNames[i]) == nil then return false end
-            end
-            return true
-        end
-        -- filtergc lets the executor pick out the table natively, without
-        -- building and walking a list of every object in memory.
-        do
-            pcall(function()
-                local keys = {}
-                for i = 1, probe do keys[i] = baseNames[i] end
-                local found = filtergc("table", { Keys = keys }, true)
-                if type(found) == "table" and isSoundMap(found) then
-                    soundMap, sample = found, rawget(found, baseNames[1])
-                elseif type(found) == "table" then
-                    for _, t in pairs(found) do
-                        if isSoundMap(t) then soundMap, sample = t, rawget(t, baseNames[1]); break end
+        pcall(function()
+            local okG, gc = pcall(getgc, true)
+            if not (okG and type(gc) == "table") then return end
+            local first = baseNames[1]
+            local n = 0
+            for _, obj in pairs(gc) do
+                n = n + 1
+                if n % 1000 == 0 then task.wait() end
+                if type(obj) == "table" and obj ~= dd and obj ~= dd.Values and rawget(obj, first) ~= nil then
+                    local hits = 1
+                    for i = 2, probe do
+                        if rawget(obj, baseNames[i]) ~= nil then hits = hits + 1 else break end
+                    end
+                    if hits == probe then
+                        soundMap = obj
+                        sample = rawget(obj, first)
+                        break
                     end
                 end
-            end)
-        end
+            end
+        end)
         env.__IS_gcBusy = false
-        pcall(writefile, GUARD, "done")  -- search finished without closing the game
-        BL("hitsound: filtergc done")
         if not soundMap then notify("built-in sound table not found", 6) return end
         if type(sample) ~= "string" and type(sample) ~= "table" then
             notify("sound table format (" .. type(sample) .. ") not supported", 6)
@@ -495904,7 +496196,6 @@ task.spawn(function()
         end
     end)
 
-    BL("section: remove map textures")
     -- === REMOVE MAP TEXTURES (World tab) ===
     -- Hides Texture/Decal, clears MeshPart TextureID / SurfaceAppearance and
     -- sets parts to SmoothPlastic. Player characters and the camera
@@ -496002,7 +496293,6 @@ task.spawn(function()
         end
 
         local function enable()
-            BL("textures: enable")
             active = true
             local all = workspace:GetDescendants()
             for i, d in ipairs(all) do
@@ -496037,7 +496327,148 @@ task.spawn(function()
         end)
     end)
 
-    BL("section: extra skies")
+    -- === HEAD / BODY HIT SOUNDS (files in workspace/unnamed) ===
+    -- Rivals sends the part you hit to the server when you shoot or swing.
+    -- Read (never modify) FireServer arguments, find a part of another
+    -- player's character, and play the headshot or body sound for it.
+    pcall(function()
+        local HS_FOLDER = "unnamed"
+        local PlayersH = game:GetService("Players")
+        local SoundSvc = game:GetService("SoundService")
+        local hsTab = miscTab
+        local hsGroup = hsTab:AddRightGroupbox('Head / Body Hit Sounds')
+
+        local function listAudio()
+            local out = { '(none)' }
+            pcall(function()
+                if type(listfiles) ~= "function" then return end
+                for _, p in ipairs(listfiles(HS_FOLDER)) do
+                    local name = p:match("([^/\\]+)$") or p
+                    local ext = name:lower():match("%.([^.]+)$")
+                    if ext == "mp3" or ext == "ogg" or ext == "wav" or ext == "flac" then
+                        table.insert(out, name)
+                    end
+                end
+            end)
+            return out
+        end
+
+        hsGroup:AddToggle('IS_HHSEnabled', {
+            Text = 'Enable',
+            Default = false,
+            Tooltip = 'Turn off the built-in hit sound to avoid hearing both',
+        })
+        hsGroup:AddDropdown('IS_HHSHead', { Text = 'Headshot Sound', Values = listAudio(), Default = '(none)' })
+        hsGroup:AddDropdown('IS_HHSBody', { Text = 'Body Sound', Values = listAudio(), Default = '(none)' })
+        hsGroup:AddSlider('IS_HHSVolume', { Text = 'Volume', Default = 1, Min = 0, Max = 3, Rounding = 2 })
+        hsGroup:AddButton({
+            Text = 'Refresh sound list',
+            Func = function()
+                local vals = listAudio()
+                pcall(function() Options.IS_HHSHead:SetValues(vals) end)
+                pcall(function() Options.IS_HHSBody:SetValues(vals) end)
+                pcall(function() lib:Notify(("[HitSound] %d file(s) in %s/"):format(#vals - 1, HS_FOLDER), 3) end)
+            end,
+        })
+        hsGroup:AddToggle('IS_HHSDebug', {
+            Text = 'Show hit log',
+            Default = false,
+            Tooltip = 'Notify which part was hit (to check head/body detection)',
+        })
+
+        local getter = getcustomasset or (syn and syn.getcustomasset)
+        local urlCache = {}
+        local function urlFor(name)
+            if not name or name == '' or name == '(none)' or type(getter) ~= "function" then return nil end
+            if urlCache[name] == nil then
+                local ok, url = pcall(getter, HS_FOLDER .. "/" .. name)
+                urlCache[name] = (ok and type(url) == "string" and url ~= "") and url or false
+            end
+            return urlCache[name] or nil
+        end
+
+        local function playFile(name)
+            local url = urlFor(name)
+            if not url then return end
+            local s = Instance.new("Sound")
+            s.SoundId = url
+            s.Volume = (Options.IS_HHSVolume and Options.IS_HHSVolume.Value) or 1
+            s.Parent = SoundSvc
+            s:Play()
+            task.delay(5, function() pcall(function() s:Destroy() end) end)
+        end
+
+        -- Is this part on another player's character?
+        local function enemyPart(v)
+            if typeof(v) ~= "Instance" or not v:IsA("BasePart") then return nil end
+            local model = v:FindFirstAncestorOfClass("Model")
+            while model do
+                local plr = PlayersH:GetPlayerFromCharacter(model)
+                if plr then return plr ~= PlayersH.LocalPlayer and v or nil end
+                model = model:FindFirstAncestorOfClass("Model")
+            end
+            return nil
+        end
+
+        local function findHitPart(args, n)
+            for i = 1, n do
+                local a = args[i]
+                local p = enemyPart(a)
+                if p then return p end
+                if type(a) == "table" then
+                    for _, v in pairs(a) do
+                        p = enemyPart(v)
+                        if p then return p end
+                        if type(v) == "table" then
+                            for _, w in pairs(v) do
+                                p = enemyPart(w)
+                                if p then return p end
+                            end
+                        end
+                    end
+                end
+            end
+            return nil
+        end
+
+        local lastPlay = 0
+        local function onHit(part)
+            local now = os.clock()
+            if now - lastPlay < 0.05 then return end
+            lastPlay = now
+            local isHead = part.Name:lower():find("head", 1, true) ~= nil
+            if Toggles.IS_HHSDebug and Toggles.IS_HHSDebug.Value then
+                pcall(function() lib:Notify(("[HitSound] %s (%s)"):format(isHead and "HEAD" or "BODY", part.Name), 2) end)
+            end
+            local pick = isHead and Options.IS_HHSHead or Options.IS_HHSBody
+            playFile(pick and pick.Value)
+        end
+
+        local mt = getrawmetatable(game)
+        local oldNc = mt and mt.__namecall
+        if not oldNc then return end
+        setreadonly(mt, false)
+        mt.__namecall = newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if method == "FireServer" and Toggles.IS_HHSEnabled and Toggles.IS_HHSEnabled.Value then
+                -- Forward the call FIRST. findHitPart makes method calls
+                -- (IsA, FindFirstAncestorOfClass, ...) which overwrite the
+                -- current namecall method; doing that before forwarding made
+                -- the game's FireServer run as the wrong method.
+                local n = select("#", ...)
+                local args = { ... }
+                local res = table.pack(oldNc(self, ...))
+                if n > 0 then
+                    local okF, part = pcall(findHitPart, args, n)
+                    if okF and part then task.spawn(onHit, part) end
+                end
+                return table.unpack(res, 1, res.n)
+            end
+            return oldNc(self, ...)
+        end)
+        pcall(function() setreadonly(mt, true) end)
+    end)
+
     -- === EXTRA SKIES (added to the skybox dropdown) ===
     -- Adds "gray sky" plus 24 preset skies (face IDs from the LYHub/Solix
     -- skybox) to skybox_value. Names the script already has are left to
@@ -496103,11 +496534,8 @@ task.spawn(function()
             local getter = getcustomasset or (syn and syn.getcustomasset)
             if type(getter) ~= "function" or type(writefile) ~= "function" then return end
             if type(isfolder) == "function" and not isfolder("unnamed") then makefolder("unnamed") end
-            BL("sky: write gray image")
             writefile("unnamed/graysky.png", GRAY_PNG)
-            BL("sky: getcustomasset")
             local ok, url = pcall(getter, "unnamed/graysky.png")
-            BL("sky: getcustomasset done")
             if ok and type(url) == "string" and url ~= "" then grayUrl = url end
         end)
 
