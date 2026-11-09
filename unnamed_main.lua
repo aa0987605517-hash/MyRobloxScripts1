@@ -496166,6 +496166,107 @@ task.spawn(function()
         end
     end)
 
+    -- === REMOVE MAP TEXTURES (World tab) ===
+    -- Hides Texture/Decal, clears MeshPart TextureID / SurfaceAppearance and
+    -- sets parts to SmoothPlastic. Player characters and the camera
+    -- (viewmodel) are left alone. Turning it off restores everything.
+    pcall(function()
+        local worldTab = miscTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            if tostring(name):lower() == 'world' then worldTab = tab; break end
+        end
+        local texGroup = worldTab:AddLeftGroupbox('Textures')
+        texGroup:AddToggle('IS_NoTextures', {
+            Text = 'Remove Map Textures',
+            Default = false,
+            Tooltip = 'Hide map textures/decals and make parts SmoothPlastic (players and weapons untouched)',
+        })
+
+        local PlayersT = game:GetService("Players")
+        local saved = {}      -- [Instance] = { property = originalValue }
+        local addConn = nil
+        local active = false
+
+        local function excluded(inst)
+            local cam = workspace.CurrentCamera
+            if cam and inst:IsDescendantOf(cam) then return true end
+            for _, p in ipairs(PlayersT:GetPlayers()) do
+                local c = p.Character
+                if c and inst:IsDescendantOf(c) then return true end
+            end
+            return false
+        end
+
+        local function strip(inst)
+            if saved[inst] or not active then return end
+            local isTex = inst:IsA("Texture") or inst:IsA("Decal")
+            local isSA = inst:IsA("SurfaceAppearance")
+            local isPart = inst:IsA("BasePart")
+            if not (isTex or isSA or isPart) then return end
+            if excluded(inst) then return end
+            pcall(function()
+                if isTex then
+                    if inst.Transparency < 1 then
+                        saved[inst] = { Transparency = inst.Transparency }
+                        inst.Transparency = 1
+                    end
+                elseif isSA then
+                    saved[inst] = { Parent = inst.Parent }
+                    inst.Parent = nil
+                else
+                    local rec = {}
+                    if inst.Material ~= Enum.Material.SmoothPlastic then
+                        rec.Material = inst.Material
+                        inst.Material = Enum.Material.SmoothPlastic
+                    end
+                    if inst.MaterialVariant ~= "" then
+                        rec.MaterialVariant = inst.MaterialVariant
+                        inst.MaterialVariant = ""
+                    end
+                    if inst:IsA("MeshPart") and inst.TextureID ~= "" then
+                        rec.TextureID = inst.TextureID
+                        inst.TextureID = ""
+                    end
+                    if next(rec) then saved[inst] = rec end
+                end
+            end)
+        end
+
+        local function enable()
+            active = true
+            local all = workspace:GetDescendants()
+            for i, d in ipairs(all) do
+                if not active then return end
+                strip(d)
+                if i % 500 == 0 then task.wait() end  -- spread over frames
+            end
+            if active and not addConn then
+                addConn = workspace.DescendantAdded:Connect(function(d)
+                    task.defer(strip, d)  -- let the new map piece finish loading
+                end)
+            end
+        end
+
+        local function disable()
+            active = false
+            if addConn then addConn:Disconnect(); addConn = nil end
+            local list = saved
+            saved = {}
+            local i = 0
+            for inst, rec in pairs(list) do
+                pcall(function()
+                    for prop, val in pairs(rec) do inst[prop] = val end
+                end)
+                i = i + 1
+                if i % 500 == 0 then task.wait() end
+            end
+        end
+
+        Toggles.IS_NoTextures:OnChanged(function(v)
+            if v then task.spawn(enable) else task.spawn(disable) end
+        end)
+    end)
+
 end)
 
 return _result
