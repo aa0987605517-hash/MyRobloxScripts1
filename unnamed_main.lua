@@ -496669,6 +496669,84 @@ task.spawn(function()
         end
     end)
 
+    -- === AUTO CHAT ON WIN ===
+    -- When the end-of-match banner reads "勝利" / "Victory", send a chat
+    -- message once (default "e z"). Labels are found with a slow, yielding
+    -- walk of PlayerGui every 3s, only while the toggle is on.
+    pcall(function()
+        local ezGroup = miscTab:AddRightGroupbox('Auto Chat On Win')
+        ezGroup:AddToggle('IS_AutoEz', {
+            Text = 'Send message on win',
+            Default = true,
+            Tooltip = 'Sends the message once when the victory screen appears',
+        })
+        ezGroup:AddInput('IS_AutoEzText', {
+            Text = 'Message',
+            Default = 'e z',
+            Placeholder = 'e z',
+            Numeric = false,
+        })
+
+        local WIN_WORDS = { ["勝利"] = true, ["胜利"] = true, ["victory"] = true }
+        local TCS = game:GetService("TextChatService")
+        local RS = game:GetService("ReplicatedStorage")
+
+        local function sendChat(msg)
+            local ok = pcall(function()
+                local channels = TCS:FindFirstChild("TextChannels")
+                local general = channels and channels:FindFirstChild("RBXGeneral")
+                general:SendAsync(msg)
+            end)
+            if not ok then
+                pcall(function()
+                    RS.DefaultChatSystemChatEvents.SayMessageRequest:FireServer(msg, "All")
+                end)
+            end
+        end
+
+        -- Is the label actually on screen (every ancestor visible/enabled)?
+        local function isShown(obj)
+            local node = obj
+            while node do
+                if node:IsA("GuiObject") and not node.Visible then return false end
+                if node:IsA("LayerCollector") then return node.Enabled end
+                node = node.Parent
+            end
+            return false
+        end
+
+        local function isWinLabel(d)
+            if not (d:IsA("TextLabel") or d:IsA("TextButton")) then return false end
+            local t = tostring(d.Text):gsub("^%s+", ""):gsub("%s+$", "")
+            return WIN_WORDS[t] == true or WIN_WORDS[t:lower()] == true
+        end
+
+        task.spawn(function()
+            local pg = LocalPlayer:WaitForChild("PlayerGui")
+            local sentThisScreen = false
+            while task.wait(3) do
+                if Toggles.IS_AutoEz and Toggles.IS_AutoEz.Value then
+                    local shownWin = false
+                    local all = pg:GetDescendants()
+                    for i, d in ipairs(all) do
+                        if i % 300 == 0 then task.wait() end
+                        if d.Parent and isWinLabel(d) and isShown(d) then
+                            shownWin = true
+                            break
+                        end
+                    end
+                    if shownWin and not sentThisScreen then
+                        sentThisScreen = true
+                        local msg = (Options.IS_AutoEzText and Options.IS_AutoEzText.Value) or "e z"
+                        if msg ~= "" then sendChat(msg) end
+                    elseif not shownWin then
+                        sentThisScreen = false
+                    end
+                end
+            end
+        end)
+    end)
+
 end)
 
 return _result
