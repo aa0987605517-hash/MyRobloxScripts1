@@ -496747,23 +496747,22 @@ task.spawn(function()
         end)
     end)
 
-    -- === ANTI KATANA (shots pass through a katana deflect) ===
+    -- === ANTI KATANA (don't shoot into a katana deflect) ===
     -- An enemy is "deflecting" while one of the katana deflect animations
     -- plays on their character (IDs found by logging a real deflect).
-    -- While they deflect, their parts are made unqueryable on our side so
-    -- our shots don't register on them and can't be bounced back.
-    -- No metamethod hooks are used.
+    -- Shots aimed at them are skipped by wrapping the weapon's shoot
+    -- methods. No metamethod hooks are used.
     pcall(function()
         local akGroup = miscTab:AddRightGroupbox('Anti Katana')
         akGroup:AddToggle('IS_AntiKatana', {
             Text = 'Anti Katana',
             Default = true,
-            Tooltip = 'While an enemy deflects with a katana, your shots pass through them instead of being bounced back',
+            Tooltip = 'While an enemy deflects with a katana, shots aimed at them are not fired',
         })
         akGroup:AddToggle('IS_AntiKatanaLog', {
             Text = 'Show deflect detection',
             Default = false,
-            Tooltip = 'Notify when an enemy starts deflecting (to check detection)',
+            Tooltip = 'Notify deflects, blocked shots and which weapon methods were wrapped (to check it works)',
         })
 
         local DEFLECT_IDS = { ["10358526981"] = true, ["10358505520"] = true }
@@ -496808,53 +496807,113 @@ task.spawn(function()
             return (playing[plr] or 0) > 0 and startedAt[plr] and (os.clock() - startedAt[plr]) < 3
         end
 
-        -- Make a deflecting enemy unhittable on our side: with CanQuery off
-        -- (and CanCollide off, required for CanQuery to take effect) our
-        -- shots' raycasts pass through them, so no hit is sent into the
-        -- deflect and nothing bounces back. Restored when the deflect ends.
-        local hiddenParts = {}   -- [Player] = { [BasePart] = {CanCollide, CanQuery} }
+        -- Skip shots aimed at a deflecting enemy. Hits are decided by the
+        -- server from what we send, and metamethod hooks crash this
+        -- executor, so instead the equipped weapon's own shoot methods
+        -- (plain Lua functions in its class table) are wrapped: before a
+        -- shot, if its arguments name a part of a deflecting enemy, or the
+        -- camera is aimed at one, the call is dropped.
+        local function deflectingOwner(v)
+            if typeof(v) ~= "Instance" or not v:IsA("BasePart") then return nil end
+            for plr in pairs(playing) do
+                local c = plr.Character
+                if c and isDeflecting(plr) and v:IsDescendantOf(c) then return plr end
+            end
+            return nil
+        end
 
-        local function hideChar(plr)
-            local char = plr.Character
-            if not char then return end
-            local saved = hiddenParts[plr] or {}
-            hiddenParts[plr] = saved
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and not saved[part] then
-                    saved[part] = { part.CanCollide, part.CanQuery }
-                    pcall(function()
-                        part.CanCollide = false
-                        part.CanQuery = false
-                    end)
+        local function argsHitDeflector(...)
+            for i = 1, select("#", ...) do
+                local a = select(i, ...)
+                if deflectingOwner(a) then return true end
+                if type(a) == "table" then
+                    for _, x in pairs(a) do
+                        if deflectingOwner(x) then return true end
+                    end
                 end
+            end
+            return false
+        end
+
+        -- Is a deflecting enemy close to the line the camera is aiming along?
+        local function aimingAtDeflector()
+            local cam = workspace.CurrentCamera
+            if not cam then return false end
+            local origin, dir = cam.CFrame.Position, cam.CFrame.LookVector
+            for plr in pairs(playing) do
+                if isDeflecting(plr) then
+                    local c = plr.Character
+                    local root = c and (c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("HitboxBody"))
+                    if root then
+                        local rel = root.Position - origin
+                        local along = rel:Dot(dir)
+                        if along > 0 and (rel - dir * along).Magnitude < 5 then return true end
+                    end
+                end
+            end
+            return false
+        end
+
+        local function logBlock(name)
+            if Toggles.IS_AntiKatanaLog and Toggles.IS_AntiKatanaLog.Value then
+                pcall(function() lib:Notify("[AntiKatana] blocked " .. name, 1) end)
             end
         end
 
-        local function restoreChar(plr)
-            local saved = hiddenParts[plr]
-            if not saved then return end
-            hiddenParts[plr] = nil
-            for part, st in pairs(saved) do
+        local wrapped = setmetatable({}, { __mode = "k" })  -- class tables already wrapped
+        local function wrapClass(cls)
+            if type(cls) ~= "table" or wrapped[cls] then return end
+            wrapped[cls] = true
+            pcall(function() if setreadonly then setreadonly(cls, false) end end)
+            local names = {}
+            for name, fn in pairs(cls) do
+                if type(name) == "string" and type(fn) == "function" and name:find("Shoot", 1, true)
+                    and name ~= "StopShooting" then
+                    local orig = fn
+                    local ok = pcall(function()
+                        cls[name] = function(self, ...)
+                            if Toggles.IS_AntiKatana and Toggles.IS_AntiKatana.Value
+                                and (argsHitDeflector(...) or aimingAtDeflector()) then
+                                logBlock(name)
+                                return nil
+                            end
+                            return orig(self, ...)
+                        end
+                    end)
+                    if ok then table.insert(names, name) end
+                end
+            end
+            if Toggles.IS_AntiKatanaLog and Toggles.IS_AntiKatanaLog.Value then
                 pcall(function()
-                    if part.Parent then
-                        part.CanCollide = st[1]
-                        part.CanQuery = st[2]
-                    end
+                    lib:Notify("[AntiKatana] wrapped: " .. (#names > 0 and table.concat(names, ", ") or "none"), 4)
                 end)
             end
         end
 
-        RunAK.Heartbeat:Connect(function()
-            local on = Toggles.IS_AntiKatana and Toggles.IS_AntiKatana.Value
-            for plr in pairs(playing) do
-                if on and isDeflecting(plr) then
-                    hideChar(plr)
-                elseif hiddenParts[plr] then
-                    restoreChar(plr)
-                end
-            end
-            for plr in pairs(hiddenParts) do
-                if not playing[plr] then restoreChar(plr) end
+        -- Wrap the class of whatever weapon is equipped (checked every 0.5s)
+        local fcModule = nil
+        task.spawn(function()
+            while task.wait(0.5) do
+                pcall(function()
+                    if not fcModule then
+                        local ok, m = pcall(function()
+                            return require(LocalPlayer.PlayerScripts.Controllers.FighterController)
+                        end)
+                        if ok then fcModule = m end
+                    end
+                    local lf = fcModule and fcModule.LocalFighter
+                    local item = lf and lf.EquippedItem
+                    if type(item) ~= "table" then return end
+                    local mt = getmetatable(item)
+                    local cls = type(mt) == "table" and rawget(mt, "__index")
+                    -- Walk up the class chain (Gun -> Item base) a few levels
+                    for _ = 1, 4 do
+                        if type(cls) ~= "table" then break end
+                        wrapClass(cls)
+                        local pmt = getmetatable(cls)
+                        cls = type(pmt) == "table" and rawget(pmt, "__index") or nil
+                    end
+                end)
             end
         end)
     end)
