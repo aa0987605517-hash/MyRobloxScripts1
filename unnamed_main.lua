@@ -496747,6 +496747,120 @@ task.spawn(function()
         end)
     end)
 
+    -- === ANTI KATANA (don't fire into a katana deflect) ===
+    -- An enemy is "deflecting" while one of the katana deflect animations
+    -- plays on their character (IDs found by logging a real deflect). While
+    -- such an enemy is on screen near the crosshair, the local fighter is
+    -- told to stop shooting every frame, so shots aren't sent into the
+    -- deflect and bounced back. No metamethod hooks are used.
+    pcall(function()
+        local akGroup = miscTab:AddRightGroupbox('Anti Katana')
+        akGroup:AddToggle('IS_AntiKatana', {
+            Text = 'Anti Katana',
+            Default = true,
+            Tooltip = 'Stop firing while an enemy near your crosshair is deflecting with a katana',
+        })
+        akGroup:AddSlider('IS_AntiKatanaRadius', {
+            Text = 'Crosshair Radius (px)', Default = 250, Min = 50, Max = 1000, Rounding = 0,
+            Tooltip = 'How close to the crosshair a deflecting enemy must be to stop firing',
+        })
+        akGroup:AddToggle('IS_AntiKatanaLog', {
+            Text = 'Show deflect detection',
+            Default = false,
+            Tooltip = 'Notify when an enemy starts deflecting (to check detection)',
+        })
+
+        local DEFLECT_IDS = { ["10358526981"] = true, ["10358505520"] = true }
+        local PlayersAK = game:GetService("Players")
+        local RunAK = game:GetService("RunService")
+
+        local playing = {}   -- [Player] = number of deflect tracks playing
+        local startedAt = {} -- [Player] = os.clock() of the latest deflect start
+
+        local function watchChar(plr, char)
+            local hum = char:WaitForChild("Humanoid", 10)
+            local animator = hum and (hum:FindFirstChildOfClass("Animator") or hum)
+            if not animator then return end
+            animator.AnimationPlayed:Connect(function(track)
+                local anim = track.Animation
+                local id = tostring(anim and anim.AnimationId or ""):match("%d+")
+                if not (id and DEFLECT_IDS[id]) then return end
+                playing[plr] = (playing[plr] or 0) + 1
+                startedAt[plr] = os.clock()
+                if Toggles.IS_AntiKatanaLog and Toggles.IS_AntiKatanaLog.Value then
+                    pcall(function() lib:Notify("[AntiKatana] " .. plr.Name .. " deflecting", 2) end)
+                end
+                track.Stopped:Connect(function()
+                    playing[plr] = math.max(0, (playing[plr] or 1) - 1)
+                end)
+            end)
+        end
+        local function watchPlayer(plr)
+            if plr == LocalPlayer then return end
+            if plr.Character then task.spawn(watchChar, plr, plr.Character) end
+            plr.CharacterAdded:Connect(function(c)
+                playing[plr] = 0
+                watchChar(plr, c)
+            end)
+        end
+        for _, p in ipairs(PlayersAK:GetPlayers()) do watchPlayer(p) end
+        PlayersAK.PlayerAdded:Connect(watchPlayer)
+        PlayersAK.PlayerRemoving:Connect(function(p) playing[p] = nil; startedAt[p] = nil end)
+
+        local function isDeflecting(plr)
+            -- 3s cap in case a Stopped event is missed
+            return (playing[plr] or 0) > 0 and startedAt[plr] and (os.clock() - startedAt[plr]) < 3
+        end
+
+        local fcModule = nil
+        local function localFighter()
+            if not fcModule then
+                local ok, m = pcall(function()
+                    return require(LocalPlayer.PlayerScripts.Controllers.FighterController)
+                end)
+                if ok then fcModule = m end
+            end
+            return fcModule and fcModule.LocalFighter
+        end
+        local function asGame(fn)
+            local old = (getthreadidentity and getthreadidentity()) or 8
+            if setthreadidentity then pcall(setthreadidentity, 2) end
+            pcall(fn)
+            if setthreadidentity then pcall(setthreadidentity, old) end
+        end
+        local function stopShooting()
+            local lf = localFighter()
+            if not lf then return end
+            asGame(function() lf:Input("StopShooting") end)
+            local item = lf.EquippedItem
+            if type(item) == "table" and type(item.StopShooting) == "function" then
+                asGame(function() item:StopShooting() end)
+            end
+        end
+
+        RunAK.RenderStepped:Connect(function()
+            if not (Toggles.IS_AntiKatana and Toggles.IS_AntiKatana.Value) then return end
+            local cam = workspace.CurrentCamera
+            if not cam then return end
+            local radius = (Options.IS_AntiKatanaRadius and Options.IS_AntiKatanaRadius.Value) or 250
+            local center = cam.ViewportSize / 2
+            for plr in pairs(playing) do
+                if isDeflecting(plr) then
+                    local char = plr.Character
+                    local part = char and (char:FindFirstChild("HitboxHead") or char:FindFirstChild("Head")
+                        or char:FindFirstChild("HumanoidRootPart"))
+                    if part then
+                        local pos, onScreen = cam:WorldToViewportPoint(part.Position)
+                        if onScreen and (Vector2.new(pos.X, pos.Y) - center).Magnitude <= radius then
+                            stopShooting()
+                            return
+                        end
+                    end
+                end
+            end
+        end)
+    end)
+
 end)
 
 return _result
