@@ -496747,22 +496747,18 @@ task.spawn(function()
         end)
     end)
 
-    -- === ANTI KATANA (don't fire into a katana deflect) ===
+    -- === ANTI KATANA (shots pass through a katana deflect) ===
     -- An enemy is "deflecting" while one of the katana deflect animations
-    -- plays on their character (IDs found by logging a real deflect). While
-    -- such an enemy is on screen near the crosshair, the local fighter is
-    -- told to stop shooting every frame, so shots aren't sent into the
-    -- deflect and bounced back. No metamethod hooks are used.
+    -- plays on their character (IDs found by logging a real deflect).
+    -- While they deflect, their parts are made unqueryable on our side so
+    -- our shots don't register on them and can't be bounced back.
+    -- No metamethod hooks are used.
     pcall(function()
         local akGroup = miscTab:AddRightGroupbox('Anti Katana')
         akGroup:AddToggle('IS_AntiKatana', {
             Text = 'Anti Katana',
             Default = true,
-            Tooltip = 'Stop firing while an enemy near your crosshair is deflecting with a katana',
-        })
-        akGroup:AddSlider('IS_AntiKatanaRadius', {
-            Text = 'Crosshair Radius (px)', Default = 250, Min = 50, Max = 1000, Rounding = 0,
-            Tooltip = 'How close to the crosshair a deflecting enemy must be to stop firing',
+            Tooltip = 'While an enemy deflects with a katana, your shots pass through them instead of being bounced back',
         })
         akGroup:AddToggle('IS_AntiKatanaLog', {
             Text = 'Show deflect detection',
@@ -496812,75 +496808,53 @@ task.spawn(function()
             return (playing[plr] or 0) > 0 and startedAt[plr] and (os.clock() - startedAt[plr]) < 3
         end
 
-        local fcModule = nil
-        local function localFighter()
-            if not fcModule then
-                local ok, m = pcall(function()
-                    return require(LocalPlayer.PlayerScripts.Controllers.FighterController)
-                end)
-                if ok then fcModule = m end
-            end
-            return fcModule and fcModule.LocalFighter
-        end
-        local function asGame(fn)
-            local old = (getthreadidentity and getthreadidentity()) or 8
-            if setthreadidentity then pcall(setthreadidentity, 2) end
-            pcall(fn)
-            if setthreadidentity then pcall(setthreadidentity, old) end
-        end
-        -- Send the game a left-button release, as if the player let go of
-        -- the mouse. (Calling the fighter's StopShooting alone didn't stop
-        -- the gun.) The player has to click again after the deflect ends.
-        local VIM = nil
-        pcall(function() VIM = game:GetService("VirtualInputManager") end)
-        local function releaseMouse1()
-            if type(mouse1release) == "function" then
-                pcall(mouse1release)
-                return
-            end
-            if VIM then
-                pcall(function()
-                    local pos = game:GetService("UserInputService"):GetMouseLocation()
-                    VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
-                end)
-            end
-        end
+        -- Make a deflecting enemy unhittable on our side: with CanQuery off
+        -- (and CanCollide off, required for CanQuery to take effect) our
+        -- shots' raycasts pass through them, so no hit is sent into the
+        -- deflect and nothing bounces back. Restored when the deflect ends.
+        local hiddenParts = {}   -- [Player] = { [BasePart] = {CanCollide, CanQuery} }
 
-        local UISAK = game:GetService("UserInputService")
-        local function stopShooting()
-            -- Only release while the button is actually held, so we don't
-            -- send a stream of releases every frame of the deflect
-            local held = false
-            pcall(function() held = UISAK:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) end)
-            if held then releaseMouse1() end
-            local lf = localFighter()
-            if not lf then return end
-            asGame(function() lf:Input("StopShooting") end)
-            local item = lf.EquippedItem
-            if type(item) == "table" and type(item.StopShooting) == "function" then
-                asGame(function() item:StopShooting() end)
-            end
-        end
-
-        RunAK.RenderStepped:Connect(function()
-            if not (Toggles.IS_AntiKatana and Toggles.IS_AntiKatana.Value) then return end
-            local cam = workspace.CurrentCamera
-            if not cam then return end
-            local radius = (Options.IS_AntiKatanaRadius and Options.IS_AntiKatanaRadius.Value) or 250
-            local center = cam.ViewportSize / 2
-            for plr in pairs(playing) do
-                if isDeflecting(plr) then
-                    local char = plr.Character
-                    local part = char and (char:FindFirstChild("HitboxHead") or char:FindFirstChild("Head")
-                        or char:FindFirstChild("HumanoidRootPart"))
-                    if part then
-                        local pos, onScreen = cam:WorldToViewportPoint(part.Position)
-                        if onScreen and (Vector2.new(pos.X, pos.Y) - center).Magnitude <= radius then
-                            stopShooting()
-                            return
-                        end
-                    end
+        local function hideChar(plr)
+            local char = plr.Character
+            if not char then return end
+            local saved = hiddenParts[plr] or {}
+            hiddenParts[plr] = saved
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and not saved[part] then
+                    saved[part] = { part.CanCollide, part.CanQuery }
+                    pcall(function()
+                        part.CanCollide = false
+                        part.CanQuery = false
+                    end)
                 end
+            end
+        end
+
+        local function restoreChar(plr)
+            local saved = hiddenParts[plr]
+            if not saved then return end
+            hiddenParts[plr] = nil
+            for part, st in pairs(saved) do
+                pcall(function()
+                    if part.Parent then
+                        part.CanCollide = st[1]
+                        part.CanQuery = st[2]
+                    end
+                end)
+            end
+        end
+
+        RunAK.Heartbeat:Connect(function()
+            local on = Toggles.IS_AntiKatana and Toggles.IS_AntiKatana.Value
+            for plr in pairs(playing) do
+                if on and isDeflecting(plr) then
+                    hideChar(plr)
+                elseif hiddenParts[plr] then
+                    restoreChar(plr)
+                end
+            end
+            for plr in pairs(hiddenParts) do
+                if not playing[plr] then restoreChar(plr) end
             end
         end)
     end)
