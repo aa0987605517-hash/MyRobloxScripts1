@@ -7,7 +7,7 @@ define('ACTIVE_SEC', 120);  // 2 分鐘內 ping 過 = Online
 // ── 資料讀寫 ──────────────────────────────────────────────────────────────────
 function loadData(): array {
     if (!file_exists(DATA_FILE)) return ['users'=>[], 'blacklist'=>[]];
-    return json_decode(file_get_contents(DATA_FILE), true) ?: ['users'=>[], 'blacklist'=>[], 'spoofs'=>[]];
+    return json_decode(file_get_contents(DATA_FILE), true) ?: ['users'=>[], 'blacklist'=>[]];
 }
 function saveData(array $d): void {
     file_put_contents(DATA_FILE, json_encode($d), LOCK_EX);
@@ -40,36 +40,6 @@ if ($action === 'ping' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $d['users'][$uid] = ['username'=>$name, 'lastSeen'=>time()];
     saveData($d);
     jsonOut(['ok'=>true, 'banned'=>false]);
-}
-
-// 多人 Spoof 同步：上傳自己的 spoof，回傳其他在線腳本使用者的 spoof
-if ($action === 'spoof' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!checkKey()) jsonOut(['error'=>'Forbidden'], 403);
-    $body = json_decode(file_get_contents('php://input'), true) ?: [];
-    $uid  = (string)($body['userId'] ?? '');
-    if (!$uid || !ctype_digit($uid)) jsonOut(['error'=>'Missing userId'], 400);
-
-    $d = loadData();
-    if (isset($d['blacklist'][$uid])) jsonOut(['ok'=>false, 'banned'=>true, 'spoofs'=>new stdClass]);
-
-    // 只收已知欄位，避免亂塞資料
-    $in = is_array($body['spoof'] ?? null) ? $body['spoof'] : [];
-    $sp = [];
-    foreach (['lv','elo','ws','gr'] as $k) if (isset($in[$k]) && is_numeric($in[$k])) $sp[$k] = (int)$in[$k];
-    foreach (['inf','emp'] as $k) if (!empty($in[$k])) $sp[$k] = true;
-    if (isset($in['tag']))  $sp['tag']  = substr((string)$in['tag'], 0, 32);
-    if (isset($in['name'])) $sp['name'] = substr((string)$in['name'], 0, 32);
-
-    $now = time();
-    $d['spoofs'] = $d['spoofs'] ?? [];
-    $d['spoofs'][$uid] = ['data'=>$sp, 't'=>$now];
-    $out = [];
-    foreach ($d['spoofs'] as $id => $e) {
-        if ($now - $e['t'] > 60) { unset($d['spoofs'][$id]); continue; }
-        if ((string)$id !== $uid && !empty($e['data']) && !isset($d['blacklist'][$id])) $out[(string)$id] = $e['data'];
-    }
-    saveData($d);
-    jsonOut(['ok'=>true, 'spoofs'=> $out ?: new stdClass]);
 }
 
 if ($action === 'users' && $_SERVER['REQUEST_METHOD'] === 'GET') {
