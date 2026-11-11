@@ -496828,7 +496828,31 @@ task.spawn(function()
             pcall(fn)
             if setthreadidentity then pcall(setthreadidentity, old) end
         end
+        -- Send the game a left-button release, as if the player let go of
+        -- the mouse. (Calling the fighter's StopShooting alone didn't stop
+        -- the gun.) The player has to click again after the deflect ends.
+        local VIM = nil
+        pcall(function() VIM = game:GetService("VirtualInputManager") end)
+        local function releaseMouse1()
+            if type(mouse1release) == "function" then
+                pcall(mouse1release)
+                return
+            end
+            if VIM then
+                pcall(function()
+                    local pos = game:GetService("UserInputService"):GetMouseLocation()
+                    VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+                end)
+            end
+        end
+
+        local UISAK = game:GetService("UserInputService")
         local function stopShooting()
+            -- Only release while the button is actually held, so we don't
+            -- send a stream of releases every frame of the deflect
+            local held = false
+            pcall(function() held = UISAK:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) end)
+            if held then releaseMouse1() end
             local lf = localFighter()
             if not lf then return end
             asGame(function() lf:Input("StopShooting") end)
