@@ -497296,11 +497296,12 @@ task.spawn(function()
             -- Measured from the picture (112 px = 1 stud): torso 2x2x1, arms
             -- 1x2x1 with thin seams, one leg under the right half, no head,
             -- hair floating just above the torso.
-            local torso = part(Vector3.new(2, 2, 1), CFrame.new(0, 0, 0), BODY)
+            -- Q版 (chibi): same blocks as the picture, squashed body, big hair
+            local torso = part(Vector3.new(2, 1.3, 1), CFrame.new(0, 0, 0), BODY)
             root = torso
-            part(Vector3.new(1, 2, 1), CFrame.new(-1.53, 0, 0), BODY)
-            part(Vector3.new(1, 2, 1), CFrame.new(1.53, 0, 0), BODY)
-            part(Vector3.new(0.95, 2, 1), CFrame.new(0.47, -2.03, 0), BODY)
+            part(Vector3.new(0.9, 1.3, 0.95), CFrame.new(-1.48, 0, 0), BODY)
+            part(Vector3.new(0.9, 1.3, 0.95), CFrame.new(1.48, 0, 0), BODY)
+            part(Vector3.new(0.9, 0.8, 0.95), CFrame.new(0.47, -1.07, 0), BODY)
             for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
                 local sg = Instance.new("SurfaceGui")
                 sg.Face = face
@@ -497309,8 +497310,8 @@ task.spawn(function()
                 sg.LightInfluence = 0
                 local tl = Instance.new("TextLabel")
                 tl.BackgroundTransparency = 1
-                tl.Size = UDim2.new(0.86, 0, 0.2, 0)
-                tl.Position = UDim2.new(0.12, 0, 0.25, 0)
+                tl.Size = UDim2.new(0.86, 0, 0.3, 0)
+                tl.Position = UDim2.new(0.12, 0, 0.22, 0)
                 tl.Text = "你媽炸了"
                 tl.TextScaled = true
                 tl.TextColor3 = Color3.fromRGB(175, 175, 175)
@@ -497320,12 +497321,12 @@ task.spawn(function()
             -- hair: the actual hair cut out of the picture on two crossed
             -- planes (front/back and left/right) around a small black core
             -- for volume. Falls back to part locks if the image can't load.
-            local hc = Vector3.new(-0.05, 2.14, 0)
+            local hc = Vector3.new(-0.07, 2.34, 0)
             local hairImg = getHairAsset()
-            part(Vector3.new(1.3, 1.1, 1.2), CFrame.new(hc + Vector3.new(0.05, 0.05, 0)), HAIR, Enum.MeshType.Sphere)
+            part(Vector3.new(2.0, 1.7, 1.8), CFrame.new(hc + Vector3.new(0.07, -0.1, 0)), HAIR, Enum.MeshType.Sphere)
             if hairImg then
                 for _, rot in ipairs({ CFrame.new(), CFrame.Angles(0, math.rad(90), 0) }) do
-                    local plane = part(Vector3.new(1.96, 2.17, 0.02), CFrame.new(hc) * rot, HAIR)
+                    local plane = part(Vector3.new(3.0, 3.32, 0.02), CFrame.new(hc) * rot, HAIR)
                     plane.Transparency = 1
                     for _, f in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
                         local dcl = Instance.new("Decal")
@@ -497342,7 +497343,7 @@ task.spawn(function()
                 for k = 1, 18 do
                     local yaw = (k / 18) * math.pi * 2
                     local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
-                    lock(hc + out * 0.55, out * 0.45 + Vector3.new(0, -1, 0), 0.7, 0.3)
+                    lock(hc + out * 0.8, out * 0.45 + Vector3.new(0, -1, 0), 1.0, 0.45)
                 end
             end
             fig.PrimaryPart = torso
@@ -497399,9 +497400,9 @@ task.spawn(function()
             if el:IsA("Model") then cf, size = el:GetBoundingBox() else cf, size = main.CFrame, main.Size end
             local scale = (tonumber(Options.IS_ElixirFigScale and Options.IS_ElixirFigScale.Value) or 100) / 100
             local hgt = math.max(size.X, size.Y, size.Z) * scale
-            -- figure spans y = -3.03 .. 3.22 (foot to hair top), centre ~0.1
-            local S = hgt / 6.25
-            local fig, torso = buildFigure(cf * CFrame.new(0, -0.1 * S, 0), S)
+            -- chibi figure spans y = -1.47 .. 4.0 (foot to hair top), centre ~1.27
+            local S = hgt / 5.47
+            local fig, torso = buildFigure(cf * CFrame.new(0, -1.27 * S, 0), S)
             local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = main, torso; w.Parent = torso
             fig.Parent = main.Parent
             for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
