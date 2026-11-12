@@ -38,9 +38,10 @@ end
 -- body: torso, two arms, one leg (headless, like the picture)
 local torso = part(Vector3.new(2, 2, 1), CFrame.new(0, 0, 0), BODY)
 torso.Name = "Torso"
-part(Vector3.new(1, 2, 1), CFrame.new(-1.5, 0, 0), BODY).Name = "LeftArm"
-part(Vector3.new(1, 2, 1), CFrame.new(1.5, 0, 0), BODY).Name = "RightArm"
-part(Vector3.new(1, 2, 1), CFrame.new(0, -2, 0), BODY).Name = "Leg"
+-- small gaps so the arms/leg read as separate blocks, like the picture
+part(Vector3.new(1, 2, 1), CFrame.new(-1.54, 0, 0), BODY).Name = "LeftArm"
+part(Vector3.new(1, 2, 1), CFrame.new(1.54, 0, 0), BODY).Name = "RightArm"
+part(Vector3.new(1, 2, 1), CFrame.new(0, -2.04, 0), BODY).Name = "Leg"
 
 -- chest text
 for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
@@ -60,20 +61,38 @@ for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
     sg.Parent = torso
 end
 
--- hair: dome + messy spikes, floating above the torso
-local hc = Vector3.new(0, 1.95, 0)
-part(Vector3.new(1.9, 1.2, 1.7), CFrame.new(hc), HAIR, Enum.PartType.Ball).Name = "HairDome"
-local N = 26
-for i = 1, N do
-    local yaw = (i / N) * math.pi * 2 + math.sin(i * 7.3) * 0.3
-    local pitch = math.rad(-40 + ((i * 37) % 80))
+-- hair: fluffy cap + flat drooping locks (messy anime-style hair)
+local hc = Vector3.new(0, 2.05, 0)
+local dome = part(Vector3.new(2.0, 1.3, 1.8), CFrame.new(hc), HAIR)
+dome.Name = "HairDome"
+local m = Instance.new("SpecialMesh") -- Ball parts can't be stretched, a sphere mesh can
+m.MeshType = Enum.MeshType.Sphere
+m.Parent = dome
+
+local function lock(yaw, pitch, len, width)
     local d = Vector3.new(math.cos(pitch) * math.cos(yaw), math.sin(pitch), math.cos(pitch) * math.sin(yaw))
-    local len = 0.55 + ((i * 13) % 5) * 0.11
-    local pos = hc + Vector3.new(d.X * 0.75, d.Y * 0.45, d.Z * 0.65) + d * (len / 2)
-    part(Vector3.new(0.22, 0.22, len), CFrame.lookAt(pos, pos + d), HAIR).Name = "HairSpike"
+    local start = hc + Vector3.new(d.X * 0.8, d.Y * 0.5 + 0.15, d.Z * 0.7)
+    local pos = start + d * (len / 2)
+    -- long axis along d, wide side horizontal, thin side facing outward
+    part(Vector3.new(width, 0.12, len), CFrame.lookAt(pos, pos + d, Vector3.yAxis), HAIR).Name = "HairLock"
 end
-part(Vector3.new(0.05, 1.4, 0.05), CFrame.new(-0.55, 3.0, 0) * CFrame.Angles(0, 0, math.rad(12)), HAIR).Name = "Strand"
-part(Vector3.new(0.05, 1.2, 0.05), CFrame.new(-0.35, 2.95, 0.1) * CFrame.Angles(0, 0, math.rad(-6)), HAIR).Name = "Strand"
+
+-- drooping locks all around (front fringe included)
+local N = 18
+for i = 1, N do
+    local yaw = (i / N) * math.pi * 2 + math.sin(i * 5.1) * 0.2
+    local pitch = math.rad(-25 - ((i * 23) % 40))     -- -25 .. -65 degrees
+    lock(yaw, pitch, 0.9 + ((i * 7) % 4) * 0.15, 0.5)
+end
+-- a few messy locks sticking up / back on top
+for i = 1, 7 do
+    local yaw = math.pi * 0.5 + (i - 4) * 0.45        -- mostly toward the back
+    local pitch = math.rad(15 + ((i * 17) % 35))
+    lock(yaw, pitch, 0.7 + (i % 3) * 0.2, 0.4)
+end
+-- two thin strands sticking up on the left
+part(Vector3.new(0.05, 1.4, 0.05), CFrame.new(-0.55, 3.2, 0) * CFrame.Angles(0, 0, math.rad(12)), HAIR).Name = "Strand"
+part(Vector3.new(0.05, 1.2, 0.05), CFrame.new(-0.35, 3.15, 0.1) * CFrame.Angles(0, 0, math.rad(-6)), HAIR).Name = "Strand"
 
 fig.PrimaryPart = torso
 fig.Parent = workspace
