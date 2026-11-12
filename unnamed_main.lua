@@ -497236,10 +497236,10 @@ task.spawn(function()
 
 
     -- === CUSTOM CHARM (Visuals tab) ===
-    -- Replaces the weapon charm hanging on your gun with a picture cutout
-    -- (default: assets/charm_custom.png from this repo; your own picture:
-    -- workspace/unnamed/charm.png). The original charm parts are hidden and a
-    -- thin two-sided picture part is welded to the charm so it swings with it.
+    -- Replaces the weapon charm hanging on your gun with a small 3D figure
+    -- built from parts: black blocky body (2 arms, 1 leg), spiky black hair,
+    -- "你媽炸了" on the chest. The original charm parts are hidden and the
+    -- figure is welded to the charm so it swings with it.
     -- Charms are found by name ("charm") inside the ViewModels folder.
     pcall(function()
         local visTab = miscTab
@@ -497247,32 +497247,12 @@ task.spawn(function()
             if tostring(name):lower() == 'visuals' then visTab = tab; break end
         end
         local chGroup = visTab:AddRightGroupbox('Custom Charm')
-        chGroup:AddToggle('IS_CustomCharm', { Text = 'Custom Charm Picture', Default = false })
+        chGroup:AddToggle('IS_CustomCharm', { Text = 'Custom 3D Charm', Default = false })
         chGroup:AddSlider('IS_CustomCharmScale', { Text = 'Size', Default = 100, Min = 50, Max = 250, Rounding = 0, Suffix = '%' })
         chGroup:AddToggle('IS_CustomCharmLog', { Text = 'Show charm log (F9)', Default = false })
 
-        local DEFAULT_URL = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/claude/loving-edison-7k2co2/assets/charm_custom.png"
         local function log(...)
             if Toggles.IS_CustomCharmLog and Toggles.IS_CustomCharmLog.Value then print("[Charm]", ...) end
-        end
-
-        local asset = nil
-        local function getAsset()
-            if asset then return asset end
-            local ok, res = pcall(function()
-                local file = "unnamed/charm.png"
-                if not isfile(file) then
-                    file = "unnamed/charm_custom.png"
-                    if not isfile(file) then
-                        local body = game:HttpGet(DEFAULT_URL)
-                        if type(body) ~= "string" or body:sub(1, 4) ~= "\137PNG" then error("download failed") end
-                        writefile(file, body)
-                    end
-                end
-                return getcustomasset(file)
-            end)
-            if ok and type(res) == "string" and res ~= "" then asset = res else log("asset error", res) end
-            return asset
         end
 
         local hidden = {}   -- inst -> { prop = original }
@@ -497307,7 +497287,7 @@ task.spawn(function()
             return out, vm
         end
 
-        local function build(charm, img)
+        local function build(charm)
             local parts = {}
             if charm:IsA("BasePart") then parts[1] = charm end
             for _, d in ipairs(charm:GetDescendants()) do
@@ -497323,23 +497303,73 @@ task.spawn(function()
             if charm:IsA("Model") then cf, size = charm:GetBoundingBox() else cf, size = main.CFrame, main.Size end
             local scale = (tonumber(Options.IS_CustomCharmScale and Options.IS_CustomCharmScale.Value) or 100) / 100
             local hgt = math.max(size.X, size.Y, size.Z) * scale
-            local pic = Instance.new("Part")
-            pic.Name = "UE_CustomPic"  -- must not contain "charm" (would be picked up as a charm)
-            pic.Size = Vector3.new(hgt * 343 / 512, hgt, 0.02)
-            pic.Transparency = 1
-            pic.CanCollide, pic.CanQuery, pic.CanTouch, pic.Massless = false, false, false, true
-            pic.CastShadow = false
-            pic.CFrame = cf
-            for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
-                local dcl = Instance.new("Decal")
-                dcl.Texture = img
-                dcl.Face = face
-                dcl.Parent = pic
+            local u = hgt / 6          -- figure is ~6 units tall
+            local BODY = Color3.fromRGB(18, 18, 18)
+            local HAIR = Color3.fromRGB(12, 12, 12)
+            local fig = Instance.new("Model")
+            fig.Name = "UE_CustomFig"  -- must not contain "charm"
+            local root
+            local function part(sz, ofs, color, shape)
+                local p = Instance.new("Part")
+                p.Size = sz * u
+                p.CFrame = cf * CFrame.new(ofs.Position * u) * (ofs - ofs.Position)
+                p.Color = color
+                p.Material = Enum.Material.SmoothPlastic
+                p.CanCollide, p.CanQuery, p.CanTouch, p.Massless = false, false, false, true
+                p.CastShadow = false
+                p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+                if shape then p.Shape = shape end
+                p.Parent = fig
+                if root then
+                    local w = Instance.new("WeldConstraint")
+                    w.Part0, w.Part1 = root, p
+                    w.Parent = p
+                end
+                return p
             end
+            -- body (origin = torso centre)
+            local torso = part(Vector3.new(2, 2, 1), CFrame.new(0, 0, 0), BODY)
+            root = torso
+            part(Vector3.new(1, 2, 1), CFrame.new(-1.5, 0, 0), BODY)
+            part(Vector3.new(1, 2, 1), CFrame.new(1.5, 0, 0), BODY)
+            part(Vector3.new(1, 2, 1), CFrame.new(0, -2, 0), BODY)
+            -- chest text, front and back
+            for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
+                local sg = Instance.new("SurfaceGui")
+                sg.Face = face
+                sg.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+                sg.CanvasSize = Vector2.new(200, 200)
+                sg.LightInfluence = 0
+                local tl = Instance.new("TextLabel")
+                tl.BackgroundTransparency = 1
+                tl.Size = UDim2.new(0.84, 0, 0.26, 0)
+                tl.Position = UDim2.new(0.08, 0, 0.18, 0)
+                tl.Text = "你媽炸了"
+                tl.TextScaled = true
+                tl.TextColor3 = Color3.fromRGB(175, 175, 175)
+                tl.Parent = sg
+                sg.Parent = torso
+            end
+            -- hair: dome + spikes (headless look, hair floats above torso)
+            local hc = Vector3.new(0, 1.95, 0)
+            part(Vector3.new(1.9, 1.2, 1.7), CFrame.new(hc), HAIR, Enum.PartType.Ball)
+            local N = 26
+            for i = 1, N do
+                local yaw = (i / N) * math.pi * 2 + math.sin(i * 7.3) * 0.3
+                local pitch = math.rad(-40 + ((i * 37) % 80))   -- mostly sideways / drooping
+                local d = Vector3.new(math.cos(pitch) * math.cos(yaw), math.sin(pitch), math.cos(pitch) * math.sin(yaw))
+                local len = 0.55 + ((i * 13) % 5) * 0.11
+                local pos = hc + Vector3.new(d.X * 0.75, d.Y * 0.45, d.Z * 0.65) + d * (len / 2)
+                part(Vector3.new(0.22, 0.22, len), CFrame.lookAt(pos, pos + d), HAIR)
+            end
+            -- two thin strands sticking up on the left
+            part(Vector3.new(0.05, 1.4, 0.05), CFrame.new(-0.55, 3.0, 0) * CFrame.Angles(0, 0, math.rad(12)), HAIR)
+            part(Vector3.new(0.05, 1.2, 0.05), CFrame.new(-0.35, 2.95, 0.1) * CFrame.Angles(0, 0, math.rad(-6)), HAIR)
             local weld = Instance.new("WeldConstraint")
-            weld.Part0, weld.Part1 = main, pic
-            weld.Parent = pic
-            pic.Parent = main.Parent
+            weld.Part0, weld.Part1 = main, torso
+            weld.Parent = torso
+            fig.Parent = main.Parent
+            local pic = fig
             -- hide the original charm
             for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
             for _, d in ipairs(charm:GetDescendants()) do
@@ -497376,8 +497406,7 @@ task.spawn(function()
                     lastScale = scale
                 end
                 if on then
-                    local img = getAsset()
-                    if img then
+                    do
                         for charm, pic in pairs(made) do
                             if not charm.Parent or not pic.Parent then
                                 made[charm] = nil
@@ -497389,7 +497418,7 @@ task.spawn(function()
                         end
                         local charms, vm = findCharms()
                         for _, c in ipairs(charms) do
-                            if not made[c] then pcall(build, c, img) end
+                            if not made[c] then pcall(build, c) end
                         end
                         if #charms == 0 and not reported and vm then
                             reported = true
