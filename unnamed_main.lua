@@ -496998,7 +496998,9 @@ task.spawn(function()
         local OK_EXT = { png = true, jpg = true, jpeg = true, bmp = true, tga = true, mp3 = true, ogg = true, wav = true, flac = true }
 
         local rules = {}       -- id string -> rule
-        local saved = setmetatable({}, { __mode = "k" })   -- inst -> { prop = original }
+        -- Strong table on purpose: Roblox drops Instance wrappers from weak
+        -- tables, which lost the originals and broke switching packs
+        local saved = {}       -- inst -> { prop = original }
         local assets = {}      -- url -> asset string | false (failed) | "pending"
         local waiting = {}     -- url -> { {inst, prop}, ... }
         local conns = {}
