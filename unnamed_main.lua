@@ -497235,6 +497235,213 @@ task.spawn(function()
     end)
 
 
+
+    -- === ELIXIR CHARM -> 你媽炸了 FIGURE (Visuals tab) ===
+    -- Finds the Elixir charm (anything named "elixir" in the view models,
+    -- camera or player characters), hides it and welds a chibi figure in its
+    -- place: big black messy hair, small black body with "你媽炸了", stubby
+    -- limbs, metal ring + chain on top. Same figure as charm/charm_figure_studio.lua.
+    local okEl, errEl = pcall(function()
+        local visTab = miscTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            if tostring(name):lower() == 'visuals' then visTab = tab; break end
+        end
+        local g = visTab:AddRightGroupbox('Elixir Charm')
+        g:AddToggle('IS_ElixirFig', { Text = 'Elixir -> 你媽炸了', Default = false })
+        g:AddSlider('IS_ElixirFigScale', { Text = 'Size', Default = 100, Min = 50, Max = 200, Rounding = 0, Suffix = '%' })
+        local PlayersE = game:GetService("Players")
+
+        local function buildFigure(cf, S)
+            local fig = Instance.new("Model")
+            fig.Name = "UE_NmzlFig"
+            local BODY = Color3.fromRGB(20, 20, 22)
+            local HAIR = Color3.fromRGB(14, 14, 16)
+            local METAL = Color3.fromRGB(205, 205, 210)
+            local root
+            local function part(size, offset, color, mesh, material)
+                local p = Instance.new("Part")
+                p.Size = size * S
+                p.CFrame = cf * CFrame.new(offset.Position * S) * (offset - offset.Position)
+                p.Color = color
+                p.Material = material or Enum.Material.SmoothPlastic
+                p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+                p.CanCollide, p.CanQuery, p.CanTouch, p.Massless = false, false, false, true
+                p.CastShadow = false
+                if mesh then
+                    local m = Instance.new("SpecialMesh"); m.MeshType = mesh; m.Parent = p
+                end
+                p.Parent = fig
+                if root then
+                    local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = root, p; w.Parent = p
+                end
+                return p
+            end
+            -- body
+            local torso = part(Vector3.new(1.1, 1.0, 0.65), CFrame.new(0, 0, 0), BODY)
+            root = torso
+            part(Vector3.new(0.42, 0.9, 0.5), CFrame.new(-0.78, 0.02, 0) * CFrame.Angles(0, 0, math.rad(-8)), BODY)
+            part(Vector3.new(0.42, 0.9, 0.5), CFrame.new(0.78, 0.02, 0) * CFrame.Angles(0, 0, math.rad(8)), BODY)
+            part(Vector3.new(0.48, 0.6, 0.55), CFrame.new(-0.27, -0.8, 0), BODY)
+            part(Vector3.new(0.48, 0.6, 0.55), CFrame.new(0.27, -0.8, 0), BODY)
+            for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
+                local sg = Instance.new("SurfaceGui")
+                sg.Face = face
+                sg.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+                sg.CanvasSize = Vector2.new(220, 200)
+                sg.LightInfluence = 0
+                local tl = Instance.new("TextLabel")
+                tl.BackgroundTransparency = 1
+                tl.Size = UDim2.new(0.9, 0, 0.32, 0)
+                tl.Position = UDim2.new(0.05, 0, 0.2, 0)
+                tl.Text = "你媽炸了"
+                tl.TextScaled = true
+                tl.TextColor3 = Color3.fromRGB(180, 180, 180)
+                tl.Parent = sg
+                sg.Parent = torso
+            end
+            -- hair
+            local hc = Vector3.new(0, 1.25, 0)
+            part(Vector3.new(1.75, 1.45, 1.6), CFrame.new(hc), HAIR, Enum.MeshType.Sphere)
+            part(Vector3.new(1.5, 0.9, 1.4), CFrame.new(hc + Vector3.new(0, 0.45, -0.05)), HAIR, Enum.MeshType.Sphere)
+            local function lock(pos, dir, len, width)
+                local c = pos + dir.Unit * (len / 2)
+                part(Vector3.new(width, 0.1, len), CFrame.lookAt(c, c + dir, Vector3.yAxis), HAIR)
+            end
+            for i = 1, 16 do
+                local yaw = (i / 16) * math.pi * 2 + math.sin(i * 4.7) * 0.2
+                local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
+                local start = hc + Vector3.new(out.X * 0.7, 0.15, out.Z * 0.62)
+                local droop = -1.4 - ((i * 7) % 5) * 0.25
+                lock(start, out + Vector3.new(0, droop, 0) * 0.5, 0.55 + ((i * 3) % 4) * 0.08, 0.38)
+            end
+            for i = 1, 10 do
+                local yaw = (i / 10) * math.pi * 2 + 0.3
+                local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
+                local start = hc + Vector3.new(out.X * 0.55, 0.55, out.Z * 0.5)
+                lock(start, out + Vector3.new(0, 0.35 + (i % 3) * 0.2, 0), 0.5 + (i % 2) * 0.15, 0.3)
+            end
+            part(Vector3.new(0.04, 0.9, 0.04), CFrame.new(-0.4, 2.35, 0) * CFrame.Angles(0, 0, math.rad(14)), HAIR)
+            part(Vector3.new(0.04, 0.8, 0.04), CFrame.new(-0.25, 2.3, 0.08) * CFrame.Angles(0, 0, math.rad(-5)), HAIR)
+            -- ring + chain
+            local function ring(center, radius, thick, segs, rot)
+                for k = 1, segs do
+                    local a = (k / segs) * math.pi * 2
+                    local p = Vector3.new(math.cos(a) * radius, math.sin(a) * radius, 0)
+                    local seg = (2 * math.pi * radius) / segs * 1.15
+                    part(Vector3.new(thick, seg, thick), CFrame.new(center) * rot * CFrame.new(p) * CFrame.Angles(0, 0, a), METAL, nil, Enum.Material.Metal)
+                end
+            end
+            ring(Vector3.new(0, 2.15, 0), 0.14, 0.05, 10, CFrame.Angles(0, math.rad(90), 0))
+            ring(Vector3.new(0, 2.42, 0), 0.12, 0.045, 10, CFrame.new())
+            ring(Vector3.new(0, 2.68, 0), 0.12, 0.045, 10, CFrame.Angles(0, math.rad(90), 0))
+            ring(Vector3.new(0, 3.2, 0), 0.42, 0.07, 20, CFrame.new())
+            fig.PrimaryPart = torso
+            return fig, torso
+        end
+
+        local hidden, made = {}, {}
+        local function hide(inst, prop, value)
+            local h = hidden[inst]
+            if not h then h = {}; hidden[inst] = h end
+            if h[prop] == nil then h[prop] = inst[prop] end
+            pcall(function() inst[prop] = value end)
+        end
+        local function restoreAll()
+            for _, f in pairs(made) do pcall(function() f:Destroy() end) end
+            table.clear(made)
+            for inst, h in pairs(hidden) do
+                for prop, v in pairs(h) do pcall(function() inst[prop] = v end) end
+            end
+            table.clear(hidden)
+        end
+
+        local function findElixirs()
+            local out = {}
+            local roots = { workspace:FindFirstChild("ViewModels"), workspace.CurrentCamera }
+            for _, p in ipairs(PlayersE:GetPlayers()) do roots[#roots + 1] = p.Character end
+            for _, root in ipairs(roots) do
+                if root then
+                    for _, d in ipairs(root:GetDescendants()) do
+                        if d.Name:lower():find("elixir", 1, true) and (d:IsA("Model") or d:IsA("BasePart") or d:IsA("Folder")) then
+                            local p, top = d.Parent, true
+                            while p and p ~= root do
+                                if p.Name:lower():find("elixir", 1, true) then top = false; break end
+                                p = p.Parent
+                            end
+                            if top then out[#out + 1] = d end
+                        end
+                    end
+                end
+            end
+            return out
+        end
+
+        local function replace(el)
+            local parts = {}
+            if el:IsA("BasePart") then parts[1] = el end
+            for _, d in ipairs(el:GetDescendants()) do
+                if d:IsA("BasePart") then parts[#parts + 1] = d end
+            end
+            if #parts == 0 then return end
+            local main = parts[1]
+            for _, p in ipairs(parts) do if p.Size.Magnitude > main.Size.Magnitude then main = p end end
+            local cf, size
+            if el:IsA("Model") then cf, size = el:GetBoundingBox() else cf, size = main.CFrame, main.Size end
+            local scale = (tonumber(Options.IS_ElixirFigScale and Options.IS_ElixirFigScale.Value) or 100) / 100
+            local hgt = math.max(size.X, size.Y, size.Z) * scale
+            -- figure spans y = -1.1 .. 3.62 (feet to ring top), centre ~1.26
+            local S = hgt / 4.72
+            local fig, torso = buildFigure(cf * CFrame.new(0, -1.26 * S, 0), S)
+            local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = main, torso; w.Parent = torso
+            fig.Parent = main.Parent
+            for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
+            for _, d in ipairs(el:GetDescendants()) do
+                if d:IsA("Decal") or d:IsA("Texture") then hide(d, "Transparency", 1)
+                elseif d:IsA("SurfaceGui") or d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") then hide(d, "Enabled", false) end
+            end
+            made[el] = fig
+        end
+
+        local wasOn, lastScale, told = false, nil, nil
+        task.spawn(function()
+            while task.wait(1) do
+                local ok, err = pcall(function()
+                    local on = Toggles.IS_ElixirFig and Toggles.IS_ElixirFig.Value
+                    local sc = Options.IS_ElixirFigScale and Options.IS_ElixirFigScale.Value
+                    if not on or sc ~= lastScale then
+                        if next(made) or next(hidden) then restoreAll() end
+                        lastScale = sc
+                    end
+                    if on and not wasOn then told = nil end
+                    wasOn = on
+                    if not on then return end
+                    for el, f in pairs(made) do
+                        if not el.Parent or not f.Parent then made[el] = nil; pcall(function() f:Destroy() end) end
+                    end
+                    for inst in pairs(hidden) do if not inst.Parent then hidden[inst] = nil end end
+                    local els = findElixirs()
+                    for _, el in ipairs(els) do
+                        if not made[el] then replace(el) end
+                    end
+                    local state = #els > 0 and "found" or "none"
+                    if state ~= told then
+                        told = state
+                        if state == "found" then
+                            lib:Notify("[Elixir] replaced " .. #els .. " charm(s)", 4)
+                        else
+                            lib:Notify("[Elixir] Elixir charm not found - equip a gun with the Elixir charm", 5)
+                        end
+                    end
+                end)
+                if not ok then warn("[Elixir] " .. tostring(err)) end
+            end
+        end)
+    end)
+    if not okEl then
+        warn("[Elixir] failed to load: " .. tostring(errEl))
+        pcall(function() lib:Notify("[Elixir] failed to load: " .. tostring(errEl), 10) end)
+    end
+
 end)
 
 return _result
