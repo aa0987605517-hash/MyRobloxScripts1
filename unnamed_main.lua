@@ -497234,6 +497234,177 @@ task.spawn(function()
         end)
     end)
 
+
+    -- === CUSTOM CHARM (Visuals tab) ===
+    -- Replaces the weapon charm hanging on your gun with a picture cutout
+    -- (default: assets/charm_custom.png from this repo; your own picture:
+    -- workspace/unnamed/charm.png). The original charm parts are hidden and a
+    -- thin two-sided picture part is welded to the charm so it swings with it.
+    -- Charms are found by name ("charm") inside the ViewModels folder.
+    pcall(function()
+        local visTab = miscTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            if tostring(name):lower() == 'visuals' then visTab = tab; break end
+        end
+        local chGroup = visTab:AddRightGroupbox('Custom Charm')
+        chGroup:AddToggle('IS_CustomCharm', { Text = 'Custom Charm Picture', Default = false })
+        chGroup:AddSlider('IS_CustomCharmScale', { Text = 'Size', Default = 100, Min = 50, Max = 250, Rounding = 0, Suffix = '%' })
+        chGroup:AddToggle('IS_CustomCharmLog', { Text = 'Show charm log (F9)', Default = false })
+
+        local DEFAULT_URL = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/claude/loving-edison-7k2co2/assets/charm_custom.png"
+        local function log(...)
+            if Toggles.IS_CustomCharmLog and Toggles.IS_CustomCharmLog.Value then print("[Charm]", ...) end
+        end
+
+        local asset = nil
+        local function getAsset()
+            if asset then return asset end
+            local ok, res = pcall(function()
+                local file = "unnamed/charm.png"
+                if not isfile(file) then
+                    file = "unnamed/charm_custom.png"
+                    if not isfile(file) then
+                        local body = game:HttpGet(DEFAULT_URL)
+                        if type(body) ~= "string" or body:sub(1, 4) ~= "\137PNG" then error("download failed") end
+                        writefile(file, body)
+                    end
+                end
+                return getcustomasset(file)
+            end)
+            if ok and type(res) == "string" and res ~= "" then asset = res else log("asset error", res) end
+            return asset
+        end
+
+        local hidden = {}   -- inst -> { prop = original }
+        local made = {}     -- charm -> our part
+        local reported = false
+
+        local function hide(inst, prop, value)
+            local h = hidden[inst]
+            if not h then h = {}; hidden[inst] = h end
+            if h[prop] == nil then h[prop] = inst[prop] end
+            pcall(function() inst[prop] = value end)
+        end
+
+        local function findCharms()
+            local out = {}
+            local vm = workspace:FindFirstChild("ViewModels")
+            local roots = { vm, workspace.CurrentCamera }
+            for _, root in ipairs(roots) do
+                if root then
+                    for _, d in ipairs(root:GetDescendants()) do
+                        if d.Name:lower():find("charm", 1, true) and (d:IsA("Model") or d:IsA("BasePart") or d:IsA("Folder")) then
+                            local p, top = d.Parent, true
+                            while p and p ~= root do
+                                if p.Name:lower():find("charm", 1, true) then top = false; break end
+                                p = p.Parent
+                            end
+                            if top then out[#out + 1] = d end
+                        end
+                    end
+                end
+            end
+            return out, vm
+        end
+
+        local function build(charm, img)
+            local parts = {}
+            if charm:IsA("BasePart") then parts[1] = charm end
+            for _, d in ipairs(charm:GetDescendants()) do
+                if d:IsA("BasePart") then parts[#parts + 1] = d end
+            end
+            if #parts == 0 then return end
+            -- anchor to the biggest part so we swing with the charm
+            local main = parts[1]
+            for _, p in ipairs(parts) do
+                if p.Size.Magnitude > main.Size.Magnitude then main = p end
+            end
+            local cf, size
+            if charm:IsA("Model") then cf, size = charm:GetBoundingBox() else cf, size = main.CFrame, main.Size end
+            local scale = (tonumber(Options.IS_CustomCharmScale and Options.IS_CustomCharmScale.Value) or 100) / 100
+            local hgt = math.max(size.X, size.Y, size.Z) * scale
+            local pic = Instance.new("Part")
+            pic.Name = "UE_CustomPic"  -- must not contain "charm" (would be picked up as a charm)
+            pic.Size = Vector3.new(hgt * 343 / 512, hgt, 0.02)
+            pic.Transparency = 1
+            pic.CanCollide, pic.CanQuery, pic.CanTouch, pic.Massless = false, false, false, true
+            pic.CastShadow = false
+            pic.CFrame = cf
+            for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
+                local dcl = Instance.new("Decal")
+                dcl.Texture = img
+                dcl.Face = face
+                dcl.Parent = pic
+            end
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0, weld.Part1 = main, pic
+            weld.Parent = pic
+            pic.Parent = main.Parent
+            -- hide the original charm
+            for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
+            for _, d in ipairs(charm:GetDescendants()) do
+                if d:IsA("Decal") or d:IsA("Texture") then hide(d, "Transparency", 1)
+                elseif d:IsA("SurfaceGui") or d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail") then hide(d, "Enabled", false)
+                elseif d:IsA("SurfaceAppearance") then hide(d, "Parent", nil) end
+            end
+            made[charm] = pic
+            log("replaced", charm:GetFullName(), "size", hgt)
+        end
+
+        local function restoreAll()
+            for _, pic in pairs(made) do pcall(function() pic:Destroy() end) end
+            table.clear(made)
+            for inst, h in pairs(hidden) do
+                for prop, v in pairs(h) do
+                    if prop == "Parent" then
+                        pcall(function() if inst.Parent == nil then inst.Parent = v end end)
+                    else
+                        pcall(function() inst[prop] = v end)
+                    end
+                end
+            end
+            table.clear(hidden)
+        end
+
+        local lastScale = nil
+        task.spawn(function()
+            while task.wait(1) do
+                local on = Toggles.IS_CustomCharm and Toggles.IS_CustomCharm.Value
+                local scale = Options.IS_CustomCharmScale and Options.IS_CustomCharmScale.Value
+                if not on or scale ~= lastScale then
+                    if next(made) or next(hidden) then restoreAll() end
+                    lastScale = scale
+                end
+                if on then
+                    local img = getAsset()
+                    if img then
+                        for charm, pic in pairs(made) do
+                            if not charm.Parent or not pic.Parent then
+                                made[charm] = nil
+                                pcall(function() pic:Destroy() end)
+                            end
+                        end
+                        for inst in pairs(hidden) do
+                            if not inst.Parent then hidden[inst] = nil end
+                        end
+                        local charms, vm = findCharms()
+                        for _, c in ipairs(charms) do
+                            if not made[c] then pcall(build, c, img) end
+                        end
+                        if #charms == 0 and not reported and vm then
+                            reported = true
+                            local names = {}
+                            for _, d in ipairs(vm:GetDescendants()) do
+                                if d:IsA("Model") and #names < 40 then names[#names + 1] = d.Name end
+                            end
+                            log("no charm found; models in ViewModels:", table.concat(names, ", "))
+                        end
+                    end
+                end
+            end
+        end)
+    end)
+
 end)
 
 return _result
