@@ -497402,6 +497402,9 @@ task.spawn(function()
             local hgt = math.max(size.X, size.Y, size.Z) * scale
             -- chibi figure spans y = -1.47 .. 4.0 (foot to hair top), centre ~1.27
             local S = hgt / 5.47
+            for _, old in ipairs(main.Parent:GetChildren()) do
+                if old.Name == "UE_NmzlFig" then old:Destroy() end
+            end
             local fig, torso = buildFigure(cf * CFrame.new(0, -1.27 * S, 0), S)
             local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = main, torso; w.Parent = torso
             fig.Parent = main.Parent
@@ -497414,8 +497417,17 @@ task.spawn(function()
         end
 
         local wasOn, lastScale, told = false, nil, nil
+        -- Re-injecting without rejoining left the old script's loop running
+        -- with the old figure. The newest copy takes over: older loops see a
+        -- newer token, clean up and stop.
+        local myToken = (rawget(sharedEnv, '__UE_ElixirToken') or 0) + 1
+        rawset(sharedEnv, '__UE_ElixirToken', myToken)
         task.spawn(function()
             while task.wait(1) do
+                if rawget(sharedEnv, '__UE_ElixirToken') ~= myToken then
+                    pcall(restoreAll)
+                    break
+                end
                 local ok, err = pcall(function()
                     local on = Toggles.IS_ElixirFig and Toggles.IS_ElixirFig.Value
                     local sc = Options.IS_ElixirFigScale and Options.IS_ElixirFigScale.Value
@@ -497438,7 +497450,7 @@ task.spawn(function()
                     if state ~= told then
                         told = state
                         if state == "found" then
-                            lib:Notify("[Elixir] replaced " .. #els .. " charm(s)", 4)
+                            lib:Notify("[Elixir] replaced " .. #els .. " charm(s) - Q版 v2", 4)
                         else
                             lib:Notify("[Elixir] Elixir charm not found - equip a gun with the Elixir charm", 5)
                         end
