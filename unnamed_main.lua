@@ -497236,10 +497236,13 @@ task.spawn(function()
 
 
     -- === CUSTOM CHARM (Visuals tab) ===
-    -- Replaces the weapon charm hanging on your gun with a small 3D figure
-    -- built from parts: black blocky body (2 arms, 1 leg), spiky black hair,
-    -- "你媽炸了" on the chest. The original charm parts are hidden and the
-    -- figure is welded to the charm so it swings with it.
+    -- Replaces the weapon charm hanging on your gun with a mini 3D copy of a
+    -- Roblox avatar (yours by default, or any name / UserId): an R6 rig built
+    -- from the avatar's HumanoidDescription with its real shirt, pants,
+    -- t-shirt, body colours, face and accessories (hair etc. loaded with
+    -- game:GetObjects). If that fails, a hand-made blocky figure is used.
+    -- The original charm parts are hidden and the figure is welded to the
+    -- charm so it swings with it.
     -- Charms are found by name ("charm") inside the ViewModels folder.
     pcall(function()
         local visTab = miscTab
@@ -497249,6 +497252,13 @@ task.spawn(function()
         local chGroup = visTab:AddRightGroupbox('Custom Charm')
         chGroup:AddToggle('IS_CustomCharm', { Text = 'Custom 3D Charm', Default = false })
         chGroup:AddSlider('IS_CustomCharmScale', { Text = 'Size', Default = 100, Min = 50, Max = 250, Rounding = 0, Suffix = '%' })
+        chGroup:AddInput('IS_CustomCharmUser', {
+            Text = 'Avatar (name or UserId)',
+            Default = '',
+            Placeholder = 'blank = your own avatar',
+            Numeric = false,
+            Finished = true,
+        })
         chGroup:AddToggle('IS_CustomCharmLog', { Text = 'Show charm log (F9)', Default = false })
 
         local function log(...)
@@ -497287,6 +497297,143 @@ task.spawn(function()
             return out, vm
         end
 
+
+        -- ── avatar template (R6 rig from a HumanoidDescription) ──
+        local PlayersC = game:GetService("Players")
+        local templates = {}   -- key -> Model | false
+        local HEADLESS = { [134082579] = true, [15093053680] = true }
+
+        local function getObj(id)
+            if not id or id == 0 then return nil end
+            local ok, res = pcall(function() return game:GetObjects("rbxassetid://" .. tostring(id))[1] end)
+            if ok then return res end
+            log("GetObjects failed", id, res)
+            return nil
+        end
+
+        local function resolveUserId()
+            local raw = tostring(Options.IS_CustomCharmUser and Options.IS_CustomCharmUser.Value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if raw == "" then return PlayersC.LocalPlayer.UserId, "self" end
+            if raw:match("^%d+$") then return tonumber(raw), raw end
+            local ok, id = pcall(function() return PlayersC:GetUserIdFromNameAsync(raw) end)
+            if ok and id then return id, raw end
+            log("unknown user", raw)
+            return nil, raw
+        end
+
+        local function buildTemplate(uid)
+            local okD, desc = pcall(function() return PlayersC:GetHumanoidDescriptionFromUserId(uid) end)
+            if not okD or not desc then log("no description", uid, desc); return nil end
+            local m = Instance.new("Model")
+            m.Name = "UE_AvatarFig"
+            local function mk(name, size, pos, color)
+                local p = Instance.new("Part")
+                p.Name = name
+                p.Size = size
+                p.CFrame = CFrame.new(pos)
+                p.Color = color or Color3.new(1, 1, 1)
+                p.CanCollide, p.CanQuery, p.CanTouch, p.Massless = false, false, false, true
+                p.CastShadow = false
+                p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+                p.Parent = m
+                return p
+            end
+            local torso = mk("Torso", Vector3.new(2, 2, 1), Vector3.new(0, 0, 0), desc.TorsoColor)
+            local head = mk("Head", Vector3.new(2, 1, 1), Vector3.new(0, 1.5, 0), desc.HeadColor)
+            local la = mk("Left Arm", Vector3.new(1, 2, 1), Vector3.new(-1.5, 0, 0), desc.LeftArmColor)
+            local ra = mk("Right Arm", Vector3.new(1, 2, 1), Vector3.new(1.5, 0, 0), desc.RightArmColor)
+            local ll = mk("Left Leg", Vector3.new(1, 2, 1), Vector3.new(-0.5, -2, 0), desc.LeftLegColor)
+            local rl = mk("Right Leg", Vector3.new(1, 2, 1), Vector3.new(0.5, -2, 0), desc.RightLegColor)
+            local hm = Instance.new("SpecialMesh")
+            hm.MeshType = Enum.MeshType.Head
+            hm.Scale = Vector3.new(1.25, 1.25, 1.25)
+            hm.Parent = head
+            if HEADLESS[desc.Head] then
+                head.Transparency = 1
+            else
+                local face = getObj(desc.Face)
+                if face and face:IsA("Decal") then face.Parent = head
+                else
+                    local d = Instance.new("Decal"); d.Name = "face"
+                    d.Texture = "rbxasset://textures/face.png"; d.Parent = head
+                end
+            end
+            -- attachments accessories snap to
+            local ATT = {
+                Head = { HairAttachment = Vector3.new(0, 0.6, 0), HatAttachment = Vector3.new(0, 0.6, 0),
+                         FaceFrontAttachment = Vector3.new(0, 0, -0.6), FaceCenterAttachment = Vector3.new(0, 0, 0) },
+                Torso = { NeckAttachment = Vector3.new(0, 1, 0), BodyFrontAttachment = Vector3.new(0, 0, -0.5),
+                          BodyBackAttachment = Vector3.new(0, 0, 0.5), LeftCollarAttachment = Vector3.new(-1, 1, 0),
+                          RightCollarAttachment = Vector3.new(1, 1, 0), WaistFrontAttachment = Vector3.new(0, -1, -0.5),
+                          WaistCenterAttachment = Vector3.new(0, -1, 0), WaistBackAttachment = Vector3.new(0, -1, 0.5) },
+                ["Left Arm"] = { LeftShoulderAttachment = Vector3.new(0, 1, 0) },
+                ["Right Arm"] = { RightShoulderAttachment = Vector3.new(0, 1, 0) },
+                ["Left Leg"] = { LeftFootAttachment = Vector3.new(0, -1, 0) },
+                ["Right Leg"] = { RightFootAttachment = Vector3.new(0, -1, 0) },
+            }
+            local rigAtt = {}
+            for pname, list in pairs(ATT) do
+                local part = m:FindFirstChild(pname)
+                for an, pos in pairs(list) do
+                    local a = Instance.new("Attachment"); a.Name = an; a.Position = pos; a.Parent = part
+                    rigAtt[an] = a
+                end
+            end
+            for _, p in ipairs({ head, la, ra, ll, rl }) do
+                local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = torso, p; w.Parent = p
+            end
+            local hum = Instance.new("Humanoid")
+            hum.RigType = Enum.HumanoidRigType.R6
+            hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+            hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+            pcall(function() hum.EvaluateStateMachine = false end)
+            hum.Parent = m
+            -- clothing
+            for _, cid in ipairs({ desc.Shirt, desc.Pants, desc.GraphicTShirt }) do
+                local c = getObj(cid)
+                if c and (c:IsA("Shirt") or c:IsA("Pants") or c:IsA("ShirtGraphic")) then c.Parent = m end
+            end
+            -- accessories
+            local ids = {}
+            pcall(function()
+                for _, a in ipairs(desc:GetAccessories(true)) do ids[#ids + 1] = a.AssetId end
+            end)
+            for _, id in ipairs(ids) do
+                local acc = getObj(id)
+                local handle = acc and acc:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    local accAtt = handle:FindFirstChildOfClass("Attachment")
+                    local target = accAtt and rigAtt[accAtt.Name]
+                    if target then
+                        handle.CFrame = target.WorldCFrame * accAtt.CFrame:Inverse()
+                    else
+                        handle.CFrame = head.CFrame * CFrame.new(0, 0.6, 0)
+                    end
+                    handle.CanCollide, handle.CanQuery, handle.CanTouch, handle.Massless = false, false, false, true
+                    handle.Anchored = false
+                    for _, d in ipairs(acc:GetDescendants()) do
+                        if d:IsA("Weld") or d:IsA("Motor6D") or d:IsA("Script") or d:IsA("LocalScript") then d:Destroy() end
+                    end
+                    local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = torso, handle; w.Parent = handle
+                    acc.Parent = m
+                else
+                    log("accessory skipped", id)
+                end
+            end
+            m.PrimaryPart = torso
+            log("avatar built for", uid, #ids, "accessories")
+            return m
+        end
+
+        local function getTemplate()
+            local uid, key = resolveUserId()
+            if not uid then return nil end
+            if templates[uid] == nil then
+                templates[uid] = buildTemplate(uid) or false
+            end
+            return templates[uid] or nil
+        end
+
         local function build(charm)
             local parts = {}
             if charm:IsA("BasePart") then parts[1] = charm end
@@ -497303,6 +497450,24 @@ task.spawn(function()
             if charm:IsA("Model") then cf, size = charm:GetBoundingBox() else cf, size = main.CFrame, main.Size end
             local scale = (tonumber(Options.IS_CustomCharmScale and Options.IS_CustomCharmScale.Value) or 100) / 100
             local hgt = math.max(size.X, size.Y, size.Z) * scale
+            local tmpl = getTemplate()
+            if tmpl then
+                local fig = tmpl:Clone()
+                pcall(function() fig:ScaleTo(hgt / 5) end)   -- R6 is ~5 studs tall
+                fig:PivotTo(cf)
+                local w = Instance.new("WeldConstraint")
+                w.Part0, w.Part1 = main, fig.PrimaryPart
+                w.Parent = fig.PrimaryPart
+                fig.Parent = main.Parent
+                for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
+                for _, d in ipairs(charm:GetDescendants()) do
+                    if d:IsA("Decal") or d:IsA("Texture") then hide(d, "Transparency", 1)
+                    elseif d:IsA("SurfaceGui") or d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail") then hide(d, "Enabled", false) end
+                end
+                made[charm] = fig
+                log("replaced (avatar)", charm:GetFullName(), "size", hgt)
+                return
+            end
             local u = hgt / 6          -- figure is ~6 units tall
             local BODY = Color3.fromRGB(18, 18, 18)
             local HAIR = Color3.fromRGB(12, 12, 12)
@@ -497400,7 +497565,8 @@ task.spawn(function()
         task.spawn(function()
             while task.wait(1) do
                 local on = Toggles.IS_CustomCharm and Toggles.IS_CustomCharm.Value
-                local scale = Options.IS_CustomCharmScale and Options.IS_CustomCharmScale.Value
+                local scale = tostring(Options.IS_CustomCharmScale and Options.IS_CustomCharmScale.Value)
+                    .. "|" .. tostring(Options.IS_CustomCharmUser and Options.IS_CustomCharmUser.Value)
                 if not on or scale ~= lastScale then
                     if next(made) or next(hidden) then restoreAll() end
                     lastScale = scale
