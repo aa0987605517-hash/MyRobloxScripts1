@@ -496225,6 +496225,7 @@ task.spawn(function()
             if tostring(name):lower() == 'world' then worldTab = tab; break end
         end
         local texGroup = worldTab:AddLeftGroupbox('Textures')
+        rawset(sharedEnv, '__UE_TexGroup', texGroup)
         texGroup:AddToggle('IS_NoTextures', {
             Text = 'Remove Map Textures',
             Default = false,
@@ -496967,9 +496968,15 @@ task.spawn(function()
         end
         local SOURCES, NAMES = packSources()
 
-        local tpGroup = visTab:AddRightGroupbox('Texture Packs')
+        -- Lives in the World tab "Textures" box next to Remove Map Textures
+        local tpGroup = rawget(sharedEnv, '__UE_TexGroup')
+        if tpGroup then
+            pcall(function() tpGroup:AddDivider() end)
+        else
+            tpGroup = visTab:AddRightGroupbox('Texture Packs')
+        end
         tpGroup:AddDropdown('IS_TexturePack', {
-            Text = 'Pack',
+            Text = 'Texture Pack',
             Values = NAMES,
             Default = 1,
             Tooltip = 'Extra packs: put .json files in workspace/unnamed/packs',
@@ -497108,10 +497115,13 @@ task.spawn(function()
             for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
             table.clear(conns)
             table.clear(waiting)
+            local n = 0
             for inst, s in pairs(saved) do
                 for prop, v in pairs(s) do
                     if prop:sub(1, 1) ~= "_" then pcall(function() inst[prop] = v end) end
                 end
+                n = n + 1
+                if n % 500 == 0 then task.wait() end
             end
             table.clear(saved)
             table.clear(rules)
@@ -497175,14 +497185,45 @@ task.spawn(function()
 
         local dd = Options.IS_TexturePack
         local current = nil
-        local function apply()
-            local v = dd and dd.Value
-            if v == current then return end
-            current = v
-            pcall(writefile, "unnamed/texture_pack.txt", tostring(v or "None"))
-            if v and v ~= "None" then start(v) else stop() end
+        -- One worker applies the latest choice: switching packs fully restores
+        -- the old pack first, then applies the new one and rescans once more
+        -- after 2s for things the game re-set in the meantime.
+        local wanted = "None"
+        local busy = false
+        local function worker()
+            if busy then return end
+            busy = true
+            while wanted ~= current do
+                local v = wanted
+                current = v
+                pcall(writefile, "unnamed/texture_pack.txt", tostring(v or "None"))
+                pcall(stop)
+                task.wait()
+                if v and v ~= "None" and wanted == v then
+                    pcall(start, v)
+                    log("switched to", v)
+                    task.delay(2, function()
+                        if current ~= v or wanted ~= v then return end
+                        local myGen = gen
+                        local lp = PlayersT.LocalPlayer
+                        for _, root in ipairs({ game:GetService("Lighting"), lp and lp:FindFirstChild("PlayerGui"), workspace }) do
+                            if root then
+                                for i, inst in ipairs(root:GetDescendants()) do
+                                    if myGen ~= gen then return end
+                                    if i % 400 == 0 then task.wait() end
+                                    if PROPS[inst.ClassName] then pcall(visit, inst, false) end
+                                end
+                            end
+                        end
+                    end)
+                end
+            end
+            busy = false
         end
-        dd:OnChanged(function() task.spawn(apply) end)
+        dd:OnChanged(function(v)
+            wanted = (dd and dd.Value) or v or "None"
+            task.spawn(worker)
+        end)
         pcall(function()
             if isfile("unnamed/texture_pack.txt") then
                 local saved = readfile("unnamed/texture_pack.txt")
