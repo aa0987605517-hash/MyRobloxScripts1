@@ -497294,6 +497294,24 @@ task.spawn(function()
                     end
                 end
             end
+            -- No name match: a charm dangles from the gun on a constraint.
+            -- Take the part on the free end of any rope/ball-socket/hinge/
+            -- spring constraint inside the view models.
+            if #out == 0 and vm then
+                local seen = {}
+                for _, d in ipairs(vm:GetDescendants()) do
+                    if d:IsA("RopeConstraint") or d:IsA("BallSocketConstraint") or d:IsA("HingeConstraint")
+                        or d:IsA("SpringConstraint") or d:IsA("RodConstraint") then
+                        local a1 = d.Attachment1
+                        local p = a1 and a1.Parent
+                        if p and p:IsA("BasePart") and not seen[p] and p.Name ~= "UE_CustomPic" then
+                            seen[p] = true
+                            local m = p.Parent
+                            if m and m:IsA("Model") and #m:GetChildren() <= 30 then out[#out + 1] = m else out[#out + 1] = p end
+                        end
+                    end
+                end
+            end
             return out, vm
         end
 
@@ -497586,13 +497604,23 @@ task.spawn(function()
                         for _, c in ipairs(charms) do
                             if not made[c] then pcall(build, c) end
                         end
-                        if #charms == 0 and not reported and vm then
-                            reported = true
+                        if #charms > 0 and reported ~= "found" then
+                            reported = "found"
+                            local nm = {}
+                            for i = 1, math.min(#charms, 3) do nm[i] = charms[i]:GetFullName() end
+                            pcall(function() lib:Notify("[Charm] replaced: " .. table.concat(nm, " | "), 6) end)
+                            print("[Charm] replaced:", table.concat(nm, " | "))
+                        elseif #charms == 0 and reported ~= "none" then
+                            reported = "none"
                             local names = {}
-                            for _, d in ipairs(vm:GetDescendants()) do
+                            local where = vm and vm or workspace.CurrentCamera
+                            for _, d in ipairs(where and where:GetDescendants() or {}) do
                                 if d:IsA("Model") and #names < 40 then names[#names + 1] = d.Name end
                             end
-                            log("no charm found; models in ViewModels:", table.concat(names, ", "))
+                            local msg = "[Charm] no charm found. ViewModels=" .. tostring(vm ~= nil)
+                                .. " models: " .. table.concat(names, ", ")
+                            pcall(function() lib:Notify("[Charm] no charm found - press F9 and screenshot the [Charm] line", 8) end)
+                            warn(msg)
                         end
                     end
                 end
