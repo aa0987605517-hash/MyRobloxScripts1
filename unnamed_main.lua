@@ -497276,52 +497276,55 @@ task.spawn(function()
                 end
                 return p
             end
-            -- body
-            local torso = part(Vector3.new(1.1, 1.0, 0.65), CFrame.new(0, 0, 0), BODY)
+            -- body: proportions of the picture (wide torso, full-height arms,
+            -- one centred leg, headless)
+            local torso = part(Vector3.new(2, 2, 1), CFrame.new(0, 0, 0), BODY)
             root = torso
-            part(Vector3.new(0.42, 0.9, 0.5), CFrame.new(-0.78, 0.02, 0) * CFrame.Angles(0, 0, math.rad(-8)), BODY)
-            part(Vector3.new(0.42, 0.9, 0.5), CFrame.new(0.78, 0.02, 0) * CFrame.Angles(0, 0, math.rad(8)), BODY)
-            part(Vector3.new(0.48, 0.6, 0.55), CFrame.new(-0.27, -0.8, 0), BODY)
-            part(Vector3.new(0.48, 0.6, 0.55), CFrame.new(0.27, -0.8, 0), BODY)
+            part(Vector3.new(1, 2, 1), CFrame.new(-1.53, 0, 0), BODY)
+            part(Vector3.new(1, 2, 1), CFrame.new(1.53, 0, 0), BODY)
+            part(Vector3.new(1, 2, 1), CFrame.new(0, -2.03, 0), BODY)
             for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
                 local sg = Instance.new("SurfaceGui")
                 sg.Face = face
                 sg.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-                sg.CanvasSize = Vector2.new(220, 200)
+                sg.CanvasSize = Vector2.new(200, 200)
                 sg.LightInfluence = 0
                 local tl = Instance.new("TextLabel")
                 tl.BackgroundTransparency = 1
-                tl.Size = UDim2.new(0.9, 0, 0.32, 0)
-                tl.Position = UDim2.new(0.05, 0, 0.2, 0)
+                tl.Size = UDim2.new(0.8, 0, 0.22, 0)
+                tl.Position = UDim2.new(0.1, 0, 0.18, 0)
                 tl.Text = "你媽炸了"
                 tl.TextScaled = true
-                tl.TextColor3 = Color3.fromRGB(180, 180, 180)
+                tl.TextColor3 = Color3.fromRGB(175, 175, 175)
                 tl.Parent = sg
                 sg.Parent = torso
             end
-            -- hair
-            local hc = Vector3.new(0, 1.25, 0)
-            part(Vector3.new(1.75, 1.45, 1.6), CFrame.new(hc), HAIR, Enum.MeshType.Sphere)
-            part(Vector3.new(1.5, 0.9, 1.4), CFrame.new(hc + Vector3.new(0, 0.45, -0.05)), HAIR, Enum.MeshType.Sphere)
+            -- hair floating above the torso (no head), messy black locks
+            local hc = Vector3.new(0, 2.35, 0)
+            part(Vector3.new(1.95, 1.3, 1.6), CFrame.new(hc), HAIR, Enum.MeshType.Sphere)
             local function lock(pos, dir, len, width)
                 local c = pos + dir.Unit * (len / 2)
-                part(Vector3.new(width, 0.1, len), CFrame.lookAt(c, c + dir, Vector3.yAxis), HAIR)
+                part(Vector3.new(width, 0.08, len), CFrame.lookAt(c, c + dir, Vector3.yAxis), HAIR)
             end
-            for i = 1, 16 do
-                local yaw = (i / 16) * math.pi * 2 + math.sin(i * 4.7) * 0.2
+            -- bangs hanging down over the front and sides
+            for i = 1, 18 do
+                local yaw = (i / 18) * math.pi * 2 + math.sin(i * 4.7) * 0.2
                 local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
-                local start = hc + Vector3.new(out.X * 0.7, 0.15, out.Z * 0.62)
-                local droop = -1.4 - ((i * 7) % 5) * 0.25
-                lock(start, out + Vector3.new(0, droop, 0) * 0.5, 0.55 + ((i * 3) % 4) * 0.08, 0.38)
+                local start = hc + Vector3.new(out.X * 0.6, 0.1, out.Z * 0.55)
+                lock(start, out * 0.45 + Vector3.new(0, -1, 0), 0.6 + ((i * 3) % 4) * 0.1, 0.3)
             end
-            for i = 1, 10 do
-                local yaw = (i / 10) * math.pi * 2 + 0.3
+            -- spiky locks sticking out sideways / up (right side flicks)
+            for i = 1, 12 do
+                local yaw = (i / 12) * math.pi * 2 + 0.25
                 local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
-                local start = hc + Vector3.new(out.X * 0.55, 0.55, out.Z * 0.5)
-                lock(start, out + Vector3.new(0, 0.35 + (i % 3) * 0.2, 0), 0.5 + (i % 2) * 0.15, 0.3)
+                local up = 0.15 + (i % 4) * 0.18
+                local start = hc + Vector3.new(out.X * 0.55, 0.3, out.Z * 0.5)
+                lock(start, out + Vector3.new(0, up, 0), 0.55 + (i % 3) * 0.15, 0.22)
             end
-            part(Vector3.new(0.04, 0.9, 0.04), CFrame.new(-0.4, 2.35, 0) * CFrame.Angles(0, 0, math.rad(14)), HAIR)
-            part(Vector3.new(0.04, 0.8, 0.04), CFrame.new(-0.25, 2.3, 0.08) * CFrame.Angles(0, 0, math.rad(-5)), HAIR)
+            -- long thin strands sticking up on the left
+            part(Vector3.new(0.04, 1.3, 0.04), CFrame.new(-0.5, 3.35, 0) * CFrame.Angles(0, 0, math.rad(12)), HAIR)
+            part(Vector3.new(0.04, 1.1, 0.04), CFrame.new(-0.35, 3.25, 0.08) * CFrame.Angles(0, 0, math.rad(-4)), HAIR)
+            part(Vector3.new(0.03, 0.9, 0.03), CFrame.new(-0.62, 3.1, -0.05) * CFrame.Angles(0, 0, math.rad(25)), HAIR)
             -- ring + chain
             local function ring(center, radius, thick, segs, rot)
                 for k = 1, segs do
@@ -497331,10 +497334,10 @@ task.spawn(function()
                     part(Vector3.new(thick, seg, thick), CFrame.new(center) * rot * CFrame.new(p) * CFrame.Angles(0, 0, a), METAL, nil, Enum.Material.Metal)
                 end
             end
-            ring(Vector3.new(0, 2.15, 0), 0.14, 0.05, 10, CFrame.Angles(0, math.rad(90), 0))
-            ring(Vector3.new(0, 2.42, 0), 0.12, 0.045, 10, CFrame.new())
-            ring(Vector3.new(0, 2.68, 0), 0.12, 0.045, 10, CFrame.Angles(0, math.rad(90), 0))
-            ring(Vector3.new(0, 3.2, 0), 0.42, 0.07, 20, CFrame.new())
+            ring(Vector3.new(0, 3.05, 0), 0.18, 0.06, 10, CFrame.Angles(0, math.rad(90), 0))
+            ring(Vector3.new(0, 3.4, 0), 0.16, 0.055, 10, CFrame.new())
+            ring(Vector3.new(0, 3.72, 0), 0.16, 0.055, 10, CFrame.Angles(0, math.rad(90), 0))
+            ring(Vector3.new(0, 4.35, 0), 0.5, 0.08, 20, CFrame.new())
             fig.PrimaryPart = torso
             return fig, torso
         end
@@ -497389,9 +497392,9 @@ task.spawn(function()
             if el:IsA("Model") then cf, size = el:GetBoundingBox() else cf, size = main.CFrame, main.Size end
             local scale = (tonumber(Options.IS_ElixirFigScale and Options.IS_ElixirFigScale.Value) or 100) / 100
             local hgt = math.max(size.X, size.Y, size.Z) * scale
-            -- figure spans y = -1.1 .. 3.62 (feet to ring top), centre ~1.26
-            local S = hgt / 4.72
-            local fig, torso = buildFigure(cf * CFrame.new(0, -1.26 * S, 0), S)
+            -- figure spans y = -3.03 .. 4.89 (foot to ring top), centre ~0.93
+            local S = hgt / 7.9
+            local fig, torso = buildFigure(cf * CFrame.new(0, -0.93 * S, 0), S)
             local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = main, torso; w.Parent = torso
             fig.Parent = main.Parent
             for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
