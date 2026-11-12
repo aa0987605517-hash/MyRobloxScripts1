@@ -497244,7 +497244,7 @@ task.spawn(function()
     -- The original charm parts are hidden and the figure is welded to the
     -- charm so it swings with it.
     -- Charms are found by name ("charm") inside the ViewModels folder.
-    pcall(function()
+    local okCharm, errCharm = pcall(function()
         local visTab = miscTab
         for name, tab in pairs(lib.Window.Tabs) do
             if tostring(name):lower() == 'visuals' then visTab = tab; break end
@@ -497580,9 +497580,15 @@ task.spawn(function()
         end
 
         local lastScale = nil
-        task.spawn(function()
-            while task.wait(1) do
+        local wasOn = false
+        local lastErr = nil
+        local function tick()
                 local on = Toggles.IS_CustomCharm and Toggles.IS_CustomCharm.Value
+                if on and not wasOn then
+                    reported = false
+                    pcall(function() lib:Notify("[Charm] on - searching for the charm on your gun...", 4) end)
+                end
+                wasOn = on
                 local scale = tostring(Options.IS_CustomCharmScale and Options.IS_CustomCharmScale.Value)
                     .. "|" .. tostring(Options.IS_CustomCharmUser and Options.IS_CustomCharmUser.Value)
                 if not on or scale ~= lastScale then
@@ -497624,9 +497630,23 @@ task.spawn(function()
                         end
                     end
                 end
+        end
+        task.spawn(function()
+            while task.wait(1) do
+                local ok, err = pcall(tick)
+                if not ok and tostring(err) ~= lastErr then
+                    lastErr = tostring(err)
+                    warn("[Charm] error: " .. lastErr)
+                    pcall(function() lib:Notify("[Charm] error: " .. lastErr, 8) end)
+                end
             end
         end)
+        pcall(function() lib:Notify("[Charm] Custom Charm loaded (Visuals tab)", 4) end)
     end)
+    if not okCharm then
+        warn("[Charm] failed to load: " .. tostring(errCharm))
+        pcall(function() lib:Notify("[Charm] failed to load: " .. tostring(errCharm), 10) end)
+    end
 
 end)
 
