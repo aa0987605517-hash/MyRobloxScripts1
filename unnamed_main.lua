@@ -497251,12 +497251,29 @@ task.spawn(function()
         g:AddSlider('IS_ElixirFigScale', { Text = 'Size', Default = 100, Min = 50, Max = 200, Rounding = 0, Suffix = '%' })
         local PlayersE = game:GetService("Players")
 
+        local HAIR_URL = "https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/claude/loving-edison-7k2co2/assets/elixir_hair.png"
+        local hairAsset = nil
+        local function getHairAsset()
+            if hairAsset ~= nil then return hairAsset or nil end
+            local ok, res = pcall(function()
+                local file = "unnamed/elixir_hair.png"
+                if not (isfile(file) and readfile(file):sub(1, 4) == "\137PNG") then
+                    local body = game:HttpGet(HAIR_URL)
+                    if type(body) ~= "string" or body:sub(1, 4) ~= "\137PNG" then error("hair download failed") end
+                    writefile(file, body)
+                end
+                return getcustomasset(file)
+            end)
+            hairAsset = (ok and type(res) == "string" and res ~= "") and res or false
+            if not hairAsset then warn("[Elixir] hair image: " .. tostring(res)) end
+            return hairAsset or nil
+        end
+
         local function buildFigure(cf, S)
             local fig = Instance.new("Model")
             fig.Name = "UE_NmzlFig"
             local BODY = Color3.fromRGB(20, 20, 22)
             local HAIR = Color3.fromRGB(14, 14, 16)
-            local METAL = Color3.fromRGB(205, 205, 210)
             local root
             local function part(size, offset, color, mesh, material)
                 local p = Instance.new("Part")
@@ -497276,68 +497293,58 @@ task.spawn(function()
                 end
                 return p
             end
-            -- body: proportions of the picture (wide torso, full-height arms,
-            -- one centred leg, headless)
+            -- Measured from the picture (112 px = 1 stud): torso 2x2x1, arms
+            -- 1x2x1 with thin seams, one leg under the right half, no head,
+            -- hair floating just above the torso.
             local torso = part(Vector3.new(2, 2, 1), CFrame.new(0, 0, 0), BODY)
             root = torso
             part(Vector3.new(1, 2, 1), CFrame.new(-1.53, 0, 0), BODY)
             part(Vector3.new(1, 2, 1), CFrame.new(1.53, 0, 0), BODY)
-            part(Vector3.new(1, 2, 1), CFrame.new(0, -2.03, 0), BODY)
+            part(Vector3.new(0.95, 2, 1), CFrame.new(0.47, -2.03, 0), BODY)
             for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
                 local sg = Instance.new("SurfaceGui")
                 sg.Face = face
                 sg.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-                sg.CanvasSize = Vector2.new(200, 200)
+                sg.CanvasSize = Vector2.new(220, 230)
                 sg.LightInfluence = 0
                 local tl = Instance.new("TextLabel")
                 tl.BackgroundTransparency = 1
-                tl.Size = UDim2.new(0.8, 0, 0.22, 0)
-                tl.Position = UDim2.new(0.1, 0, 0.18, 0)
+                tl.Size = UDim2.new(0.86, 0, 0.2, 0)
+                tl.Position = UDim2.new(0.12, 0, 0.25, 0)
                 tl.Text = "你媽炸了"
                 tl.TextScaled = true
                 tl.TextColor3 = Color3.fromRGB(175, 175, 175)
                 tl.Parent = sg
                 sg.Parent = torso
             end
-            -- hair floating above the torso (no head), messy black locks
-            local hc = Vector3.new(0, 2.35, 0)
-            part(Vector3.new(1.95, 1.3, 1.6), CFrame.new(hc), HAIR, Enum.MeshType.Sphere)
-            local function lock(pos, dir, len, width)
-                local c = pos + dir.Unit * (len / 2)
-                part(Vector3.new(width, 0.08, len), CFrame.lookAt(c, c + dir, Vector3.yAxis), HAIR)
-            end
-            -- bangs hanging down over the front and sides
-            for i = 1, 18 do
-                local yaw = (i / 18) * math.pi * 2 + math.sin(i * 4.7) * 0.2
-                local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
-                local start = hc + Vector3.new(out.X * 0.6, 0.1, out.Z * 0.55)
-                lock(start, out * 0.45 + Vector3.new(0, -1, 0), 0.6 + ((i * 3) % 4) * 0.1, 0.3)
-            end
-            -- spiky locks sticking out sideways / up (right side flicks)
-            for i = 1, 12 do
-                local yaw = (i / 12) * math.pi * 2 + 0.25
-                local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
-                local up = 0.15 + (i % 4) * 0.18
-                local start = hc + Vector3.new(out.X * 0.55, 0.3, out.Z * 0.5)
-                lock(start, out + Vector3.new(0, up, 0), 0.55 + (i % 3) * 0.15, 0.22)
-            end
-            -- long thin strands sticking up on the left
-            part(Vector3.new(0.04, 1.3, 0.04), CFrame.new(-0.5, 3.35, 0) * CFrame.Angles(0, 0, math.rad(12)), HAIR)
-            part(Vector3.new(0.04, 1.1, 0.04), CFrame.new(-0.35, 3.25, 0.08) * CFrame.Angles(0, 0, math.rad(-4)), HAIR)
-            part(Vector3.new(0.03, 0.9, 0.03), CFrame.new(-0.62, 3.1, -0.05) * CFrame.Angles(0, 0, math.rad(25)), HAIR)
-            -- ring + chain
-            local function ring(center, radius, thick, segs, rot)
-                for k = 1, segs do
-                    local a = (k / segs) * math.pi * 2
-                    local p = Vector3.new(math.cos(a) * radius, math.sin(a) * radius, 0)
-                    local seg = (2 * math.pi * radius) / segs * 1.15
-                    part(Vector3.new(thick, seg, thick), CFrame.new(center) * rot * CFrame.new(p) * CFrame.Angles(0, 0, a), METAL, nil, Enum.Material.Metal)
+            -- hair: the actual hair cut out of the picture on two crossed
+            -- planes (front/back and left/right) around a small black core
+            -- for volume. Falls back to part locks if the image can't load.
+            local hc = Vector3.new(-0.05, 2.14, 0)
+            local hairImg = getHairAsset()
+            part(Vector3.new(1.3, 1.1, 1.2), CFrame.new(hc + Vector3.new(0.05, 0.05, 0)), HAIR, Enum.MeshType.Sphere)
+            if hairImg then
+                for _, rot in ipairs({ CFrame.new(), CFrame.Angles(0, math.rad(90), 0) }) do
+                    local plane = part(Vector3.new(1.96, 2.17, 0.02), CFrame.new(hc) * rot, HAIR)
+                    plane.Transparency = 1
+                    for _, f in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
+                        local dcl = Instance.new("Decal")
+                        dcl.Texture = hairImg
+                        dcl.Face = f
+                        dcl.Parent = plane
+                    end
+                end
+            else
+                local function lock(pos, dir, len, width)
+                    local c = pos + dir.Unit * (len / 2)
+                    part(Vector3.new(width, 0.08, len), CFrame.lookAt(c, c + dir, Vector3.yAxis), HAIR)
+                end
+                for k = 1, 18 do
+                    local yaw = (k / 18) * math.pi * 2
+                    local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
+                    lock(hc + out * 0.55, out * 0.45 + Vector3.new(0, -1, 0), 0.7, 0.3)
                 end
             end
-            ring(Vector3.new(0, 3.05, 0), 0.18, 0.06, 10, CFrame.Angles(0, math.rad(90), 0))
-            ring(Vector3.new(0, 3.4, 0), 0.16, 0.055, 10, CFrame.new())
-            ring(Vector3.new(0, 3.72, 0), 0.16, 0.055, 10, CFrame.Angles(0, math.rad(90), 0))
-            ring(Vector3.new(0, 4.35, 0), 0.5, 0.08, 20, CFrame.new())
             fig.PrimaryPart = torso
             return fig, torso
         end
@@ -497392,9 +497399,9 @@ task.spawn(function()
             if el:IsA("Model") then cf, size = el:GetBoundingBox() else cf, size = main.CFrame, main.Size end
             local scale = (tonumber(Options.IS_ElixirFigScale and Options.IS_ElixirFigScale.Value) or 100) / 100
             local hgt = math.max(size.X, size.Y, size.Z) * scale
-            -- figure spans y = -3.03 .. 4.89 (foot to ring top), centre ~0.93
-            local S = hgt / 7.9
-            local fig, torso = buildFigure(cf * CFrame.new(0, -0.93 * S, 0), S)
+            -- figure spans y = -3.03 .. 3.22 (foot to hair top), centre ~0.1
+            local S = hgt / 6.25
+            local fig, torso = buildFigure(cf * CFrame.new(0, -0.1 * S, 0), S)
             local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = main, torso; w.Parent = torso
             fig.Parent = main.Parent
             for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
