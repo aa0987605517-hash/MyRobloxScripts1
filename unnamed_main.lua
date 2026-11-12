@@ -497265,7 +497265,10 @@ task.spawn(function()
                 return getcustomasset(file)
             end)
             hairAsset = (ok and type(res) == "string" and res ~= "") and res or false
-            if not hairAsset then warn("[Elixir] hair image: " .. tostring(res)) end
+            if not hairAsset then
+                warn("[Elixir] hair image: " .. tostring(res))
+                pcall(function() lib:Notify("[Elixir] hair image failed: " .. tostring(res), 8) end)
+            end
             return hairAsset or nil
         end
 
@@ -497323,9 +497326,10 @@ task.spawn(function()
             -- for volume. Falls back to part locks if the image can't load.
             local hc = Vector3.new(-0.07, 2.34, 0)
             local hairImg = getHairAsset()
-            part(Vector3.new(2.0, 1.7, 1.8), CFrame.new(hc + Vector3.new(0.07, -0.1, 0)), HAIR, Enum.MeshType.Sphere)
+            -- no ball/core: the picture has no head, only hair
             if hairImg then
-                for _, rot in ipairs({ CFrame.new(), CFrame.Angles(0, math.rad(90), 0) }) do
+                for _, deg in ipairs({ 0, 45, 90, 135 }) do
+                    local rot = CFrame.Angles(0, math.rad(deg), 0)
                     local plane = part(Vector3.new(3.0, 3.32, 0.02), CFrame.new(hc) * rot, HAIR)
                     plane.Transparency = 1
                     for _, f in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
@@ -497450,7 +497454,7 @@ task.spawn(function()
                     if state ~= told then
                         told = state
                         if state == "found" then
-                            lib:Notify("[Elixir] replaced " .. #els .. " charm(s) - Q版 v2", 4)
+                            lib:Notify("[Elixir] replaced " .. #els .. " charm(s) - Q版 v3", 4)
                         else
                             lib:Notify("[Elixir] Elixir charm not found - equip a gun with the Elixir charm", 5)
                         end
