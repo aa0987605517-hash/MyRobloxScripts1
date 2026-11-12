@@ -497027,15 +497027,29 @@ task.spawn(function()
             assets[url] = "pending"
             task.spawn(function()
                 local ext = extOf(url)
-                local file = CACHE_DIR .. "/" .. url:gsub("^https?://", ""):gsub("[^%w%.%-]", "_"):sub(-90)
-                if not file:lower():match("%." .. ext .. "$") then file = file .. "." .. ext end
-                local ok = pcall(function()
-                    if not isfile(file) then
-                        local body = game:HttpGet(rawUrl(url))
-                        if type(body) ~= "string" or #body < 64 or body:sub(1, 15):lower():find("<!doctype", 1, true) then error("bad download") end
-                        writefile(file, body)
+                -- short name with a single dot: a long dotted name made the
+                -- executor fail to load the file ("Temp read failed")
+                local h = 5381
+                for i = 1, #url do h = (h * 33 + url:byte(i)) % 4294967296 end
+                local file = CACHE_DIR .. "/a" .. string.format("%08x", h) .. "." .. ext
+                local MAGIC = { ogg = "OggS", png = "\137PNG", wav = "RIFF", flac = "fLaC" }
+                local function valid(body)
+                    if type(body) ~= "string" or #body < 64 then return false end
+                    local m = MAGIC[ext]
+                    if m then return body:sub(1, #m) == m end
+                    if ext == "mp3" then return body:sub(1, 3) == "ID3" or body:byte(1) == 255 end
+                    if ext == "jpg" or ext == "jpeg" then return body:byte(1) == 255 and body:byte(2) == 216 end
+                    return true
+                end
+                local ok, why = pcall(function()
+                    if isfile(file) and valid(readfile(file)) then return end
+                    local body = game:HttpGet(rawUrl(url))
+                    if not valid(body) then
+                        error("bad download (" .. tostring(type(body) == "string" and #body or body) .. " bytes)")
                     end
+                    writefile(file, body)
                 end)
+                if not ok then log("download", url, why) end
                 local asset = ok and select(2, pcall(getcustomasset, file)) or nil
                 if type(asset) ~= "string" or asset == "" then
                     assets[url] = false
