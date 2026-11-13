@@ -497238,9 +497238,12 @@ task.spawn(function()
 
 
     -- === AUTO VOID SPAM BY HEALTH (Main tab) ===
-    -- Turns the ragebot's own "void spam" (Toggles.ragebot_void_spam) on while
-    -- an enemy near you has less health than you, and off again when nobody
-    -- does. When this is switched off, void spam goes back to how you left it.
+    -- While an enemy near you has less health than you, keeps teleporting
+    -- your character far into the void every few milliseconds (void spam
+    -- method ported from the user's Claude.lua: Quantum Tunneling / Drift /
+    -- Stable / Spiral / Lissajous / Extreme Desync / Quantum Oscillation /
+    -- Frame Skip). When nobody is below your HP it stops and puts you back
+    -- where you were.
     local okVs, errVs = pcall(function()
         local mainTabV = miscTab
         for name, tab in pairs(lib.Window.Tabs) do
@@ -497250,35 +497253,46 @@ task.spawn(function()
         vg:AddToggle('IS_AutoVoidHP', {
             Text = 'Void spam when enemy HP < mine',
             Default = false,
-            Tooltip = 'Turns ragebot void spam on while a nearby enemy has less health than you',
+            Tooltip = 'Void spams while a nearby enemy has less health than you',
         })
+        vg:AddDropdown('IS_AutoVoidMode', {
+            Text = 'Void Spam Method',
+            Values = { 'Quantum Tunneling', 'Drift', 'Stable', 'Spiral', 'Lissajous', 'Extreme Desync', 'Quantum Oscillation', 'Frame Skip' },
+            Default = 1,
+        })
+        vg:AddSlider('IS_AutoVoidInterval', { Text = 'Teleport Interval', Default = 35, Min = 10, Max = 500, Rounding = 0, Suffix = ' ms' })
+        vg:AddSlider('IS_AutoVoidDistance', { Text = 'Distance', Default = 500, Min = 50, Max = 50000, Rounding = 0, Suffix = ' studs' })
         vg:AddSlider('IS_AutoVoidRange', { Text = 'Enemy range', Default = 300, Min = 50, Max = 2000, Rounding = 0, Suffix = ' studs' })
         vg:AddToggle('IS_AutoVoidNotify', { Text = 'Notify on switch', Default = true })
+
         local PlayersV = game:GetService("Players")
+        local RunServiceV = game:GetService("RunService")
 
         local function hpOf(char)
             if not char then return nil end
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then return hum.Health, hum end
+            if hum then return hum.Health end
             local a = char:GetAttribute("Health")
             if type(a) == "number" then return a end
             return nil
         end
 
+        -- enemy below my HP, measured from where I stood before voiding
+        local anchorPos = nil
         local function lowerEnemy()
             local me = PlayersV.LocalPlayer
             local myChar = me.Character
             local myHp = hpOf(myChar)
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myHp or myHp <= 0 or not myRoot then return nil end
+            local from = anchorPos or myRoot.Position
             local range = tonumber(Options.IS_AutoVoidRange and Options.IS_AutoVoidRange.Value) or 300
             for _, p in ipairs(PlayersV:GetPlayers()) do
                 if p ~= me and not (me.Team and p.Team == me.Team) then
                     local c = p.Character
                     local hp = hpOf(c)
                     local r = c and c:FindFirstChild("HumanoidRootPart")
-                    if hp and hp > 0 and r and hp < myHp
-                        and (r.Position - myRoot.Position).Magnitude <= range then
+                    if hp and hp > 0 and r and hp < myHp and (r.Position - from).Magnitude <= range then
                         return p, hp, myHp
                     end
                 end
@@ -497286,54 +497300,139 @@ task.spawn(function()
             return nil
         end
 
-        local userValue = nil   -- void spam setting before we touched it
-        local ours = nil        -- value we last set
-        local wasOn = false
+        -- ── void spam (ported) ──
+        local voidX, voidZ = math.random(-1e8, 1e8), math.random(-1e8, 1e8)
+        local voidYOffset, voidYDir = 0, 1
+        local voidDirX, voidDirZ = math.random() * 2 - 1, math.random() * 2 - 1
+        local voidElapsed = 0
+        local voidYBase = 1e10 + math.random(-5e9, 5e9)
+        local voidDriftSpeed, voidYDriftSpeed, voidYDriftRange, voidChaos = 9e6, 4e6, 2e9, 0.98
+        local lastVelocityClear, lastTeleport = 0, 0
+
+        local function driftDir(t)
+            local nx, nz, amp, freq = 0, 0, 1, 0.0001
+            for _ = 1, 4 do
+                nx = nx + math.noise(t * freq, 0) * amp
+                nz = nz + math.noise(0, t * freq) * amp
+                freq = freq * 2.37
+                amp = amp * 0.5
+            end
+            nx = nx + math.sin(t * 0.00213) * math.cos(t * 0.00344) * 0.2
+            nz = nz + math.cos(t * 0.00131) * math.sin(t * 0.00579) * 0.2
+            local len = math.sqrt(nx * nx + nz * nz)
+            if len < 0.001 then return math.cos(t * 0.1), math.sin(t * 0.1) end
+            return nx / len, nz / len
+        end
+
+        local function farVoidPosition(dt)
+            voidElapsed = voidElapsed + dt
+            local mode = Options.IS_AutoVoidMode and Options.IS_AutoVoidMode.Value or 'Quantum Tunneling'
+            local dist = tonumber(Options.IS_AutoVoidDistance and Options.IS_AutoVoidDistance.Value) or 500
+            if mode == 'Stable' then
+                return Vector3.new(voidX, voidYBase + voidYOffset, voidZ)
+            elseif mode == 'Drift' then
+                local dx, dz = driftDir(voidElapsed)
+                voidDirX = voidDirX + (dx - voidDirX) * voidChaos * dt * 10
+                voidDirZ = voidDirZ + (dz - voidDirZ) * voidChaos * dt * 10
+                voidX = voidX + voidDirX * voidDriftSpeed * dt
+                voidZ = voidZ + voidDirZ * voidDriftSpeed * dt
+                voidYOffset = voidYOffset + voidYDir * voidYDriftSpeed * dt
+                if math.abs(voidYOffset) >= voidYDriftRange then voidYDir = -voidYDir end
+                return Vector3.new(voidX, voidYBase + voidYOffset, voidZ)
+            elseif mode == 'Spiral' then
+                local r = math.max(dist * 1000, 1e9) * (1 + math.sin(voidElapsed))
+                return Vector3.new(voidX + math.cos(voidElapsed * 3) * r, voidYBase + voidYOffset, voidZ + math.sin(voidElapsed * 3) * r)
+            elseif mode == 'Lissajous' then
+                local r = math.max(dist * 2000, 2e9)
+                return Vector3.new(voidX + math.sin(voidElapsed * 2) * r, voidYBase + math.sin(voidElapsed * 4) * r * 0.1, voidZ + math.sin(voidElapsed * 3) * r)
+            elseif mode == 'Extreme Desync' then
+                local t = voidElapsed * 15
+                local r = math.max(dist * 10000, 1e10)
+                return Vector3.new(voidX + math.sin(t) * r, voidYBase + math.cos(t * 1.5) * r * 0.1, voidZ + math.cos(t) * r)
+            elseif mode == 'Quantum Oscillation' then
+                local t = voidElapsed * 50
+                local r = math.max(dist * 10000, 1e10) * math.sin(t)
+                return Vector3.new(voidX + r, voidYBase + math.cos(t) * 1e10, voidZ + r)
+            elseif mode == 'Frame Skip' then
+                if tick() % 0.1 < 0.05 then return Vector3.new(voidX * 2, voidYBase + 1e11, voidZ * 2) end
+                return Vector3.new(voidX, voidYBase, voidZ)
+            end
+            -- Quantum Tunneling
+            local r = math.max(dist * 10000, 1e11)
+            local sign = math.random() > 0.5 and 1 or -1
+            local jitter = Vector3.new(math.random(-1e9, 1e9), math.random(-1e8, 1e8), math.random(-1e9, 1e9))
+            return Vector3.new(voidX + r * sign, voidYBase + jitter.Y, voidZ + r * sign) + jitter
+        end
+
+        local spamConn, originalCFrame = nil, nil
+        local function rootPart()
+            local c = PlayersV.LocalPlayer.Character
+            return c and c:FindFirstChild("HumanoidRootPart")
+        end
+        local function startSpam()
+            if spamConn then return end
+            local hrp = rootPart()
+            if not hrp then return end
+            originalCFrame = hrp.CFrame
+            anchorPos = hrp.Position
+            spamConn = RunServiceV.Heartbeat:Connect(function(dt)
+                local root = rootPart()
+                if not root then return end
+                local interval = (tonumber(Options.IS_AutoVoidInterval and Options.IS_AutoVoidInterval.Value) or 35) / 1000
+                if tick() - lastTeleport < interval then return end
+                lastTeleport = tick()
+                if tick() - lastVelocityClear > 0.2 then
+                    lastVelocityClear = tick()
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                end
+                root.CFrame = CFrame.new(farVoidPosition(dt))
+            end)
+        end
+        local function stopSpam()
+            if spamConn then spamConn:Disconnect(); spamConn = nil end
+            local root = rootPart()
+            if root and originalCFrame then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = originalCFrame
+            end
+            originalCFrame, anchorPos = nil, nil
+        end
+        -- respawn: old position is meaningless
+        PlayersV.LocalPlayer.CharacterAdded:Connect(function()
+            if spamConn then spamConn:Disconnect(); spamConn = nil end
+            originalCFrame, anchorPos = nil, nil
+        end)
+
+        local active = false
         task.spawn(function()
             while task.wait(0.2) do
                 local ok, err = pcall(function()
-                    local vs = Toggles.ragebot_void_spam
-                    if not vs then return end
                     local on = Toggles.IS_AutoVoidHP and Toggles.IS_AutoVoidHP.Value
-                    if on and not wasOn then
-                        userValue = vs.Value
-                        ours = nil
-                    elseif not on and wasOn then
-                        if userValue ~= nil and vs.Value ~= userValue then vs:SetValue(userValue) end
-                        userValue, ours = nil, nil
-                    end
-                    wasOn = on
-                    if not on then return end
-                    local target, hp, myHp = lowerEnemy()
-                    local want = target ~= nil
-                    if want ~= ours or vs.Value ~= want then
-                        if vs.Value ~= want then vs:SetValue(want) end
-                        if want ~= ours and Toggles.IS_AutoVoidNotify and Toggles.IS_AutoVoidNotify.Value then
+                    local target, hp, myHp
+                    if on then target, hp, myHp = lowerEnemy() end
+                    local want = on and target ~= nil
+                    if want and not spamConn then startSpam() elseif not want and spamConn then stopSpam() end
+                    if want ~= active then
+                        active = want
+                        if on and Toggles.IS_AutoVoidNotify and Toggles.IS_AutoVoidNotify.Value then
                             if want then
                                 lib:Notify(("[AutoVoid] ON - %s %d HP < you %d HP"):format(target.Name, math.floor(hp), math.floor(myHp)), 3)
                             else
                                 lib:Notify("[AutoVoid] OFF - no enemy below your HP", 3)
                             end
                         end
-                        ours = want
                     end
                 end)
                 if not ok then warn("[AutoVoid] " .. tostring(err)) end
             end
         end)
-        if not Toggles.ragebot_void_spam then
-            task.delay(5, function()
-                if not Toggles.ragebot_void_spam then
-                    pcall(function() lib:Notify("[AutoVoid] ragebot void spam option not found", 6) end)
-                end
-            end)
-        end
     end)
     if not okVs then
         warn("[AutoVoid] failed to load: " .. tostring(errVs))
         pcall(function() lib:Notify("[AutoVoid] failed to load: " .. tostring(errVs), 10) end)
     end
-
 end)
 
 return _result
