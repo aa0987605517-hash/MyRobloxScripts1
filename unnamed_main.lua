@@ -497236,6 +497236,104 @@ task.spawn(function()
 
 
 
+
+    -- === AUTO VOID SPAM BY HEALTH (Main tab) ===
+    -- Turns the ragebot's own "void spam" (Toggles.ragebot_void_spam) on while
+    -- an enemy near you has less health than you, and off again when nobody
+    -- does. When this is switched off, void spam goes back to how you left it.
+    local okVs, errVs = pcall(function()
+        local mainTabV = miscTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            if tostring(name):lower() == 'main' then mainTabV = tab; break end
+        end
+        local vg = mainTabV:AddRightGroupbox('Auto Void Spam')
+        vg:AddToggle('IS_AutoVoidHP', {
+            Text = 'Void spam when enemy HP < mine',
+            Default = false,
+            Tooltip = 'Turns ragebot void spam on while a nearby enemy has less health than you',
+        })
+        vg:AddSlider('IS_AutoVoidRange', { Text = 'Enemy range', Default = 300, Min = 50, Max = 2000, Rounding = 0, Suffix = ' studs' })
+        vg:AddToggle('IS_AutoVoidNotify', { Text = 'Notify on switch', Default = true })
+        local PlayersV = game:GetService("Players")
+
+        local function hpOf(char)
+            if not char then return nil end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then return hum.Health, hum end
+            local a = char:GetAttribute("Health")
+            if type(a) == "number" then return a end
+            return nil
+        end
+
+        local function lowerEnemy()
+            local me = PlayersV.LocalPlayer
+            local myChar = me.Character
+            local myHp = hpOf(myChar)
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myHp or myHp <= 0 or not myRoot then return nil end
+            local range = tonumber(Options.IS_AutoVoidRange and Options.IS_AutoVoidRange.Value) or 300
+            for _, p in ipairs(PlayersV:GetPlayers()) do
+                if p ~= me and not (me.Team and p.Team == me.Team) then
+                    local c = p.Character
+                    local hp = hpOf(c)
+                    local r = c and c:FindFirstChild("HumanoidRootPart")
+                    if hp and hp > 0 and r and hp < myHp
+                        and (r.Position - myRoot.Position).Magnitude <= range then
+                        return p, hp, myHp
+                    end
+                end
+            end
+            return nil
+        end
+
+        local userValue = nil   -- void spam setting before we touched it
+        local ours = nil        -- value we last set
+        local wasOn = false
+        task.spawn(function()
+            while task.wait(0.2) do
+                local ok, err = pcall(function()
+                    local vs = Toggles.ragebot_void_spam
+                    if not vs then return end
+                    local on = Toggles.IS_AutoVoidHP and Toggles.IS_AutoVoidHP.Value
+                    if on and not wasOn then
+                        userValue = vs.Value
+                        ours = nil
+                    elseif not on and wasOn then
+                        if userValue ~= nil and vs.Value ~= userValue then vs:SetValue(userValue) end
+                        userValue, ours = nil, nil
+                    end
+                    wasOn = on
+                    if not on then return end
+                    local target, hp, myHp = lowerEnemy()
+                    local want = target ~= nil
+                    if want ~= ours or vs.Value ~= want then
+                        if vs.Value ~= want then vs:SetValue(want) end
+                        if want ~= ours and Toggles.IS_AutoVoidNotify and Toggles.IS_AutoVoidNotify.Value then
+                            if want then
+                                lib:Notify(("[AutoVoid] ON - %s %d HP < you %d HP"):format(target.Name, math.floor(hp), math.floor(myHp)), 3)
+                            else
+                                lib:Notify("[AutoVoid] OFF - no enemy below your HP", 3)
+                            end
+                        end
+                        ours = want
+                    end
+                end)
+                if not ok then warn("[AutoVoid] " .. tostring(err)) end
+            end
+        end)
+        if not Toggles.ragebot_void_spam then
+            task.delay(5, function()
+                if not Toggles.ragebot_void_spam then
+                    pcall(function() lib:Notify("[AutoVoid] ragebot void spam option not found", 6) end)
+                end
+            end)
+        end
+    end)
+    if not okVs then
+        warn("[AutoVoid] failed to load: " .. tostring(errVs))
+        pcall(function() lib:Notify("[AutoVoid] failed to load: " .. tostring(errVs), 10) end)
+    end
+
 end)
 
 return _result
