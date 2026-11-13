@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 5
+local UE_BUILD = 6
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -497341,6 +497341,33 @@ task.spawn(function()
         task.spawn(function()
             while task.wait(2) do
                 if Toggles.IS_RankedCharm.Value then pcall(apply) end
+            end
+        end)
+
+        -- In a match the first-person viewmodel takes its charm from the
+        -- server's per-match item data (self:Get("Charm")), not the player
+        -- data, so that lookup is overridden on the ClientViewModel class.
+        task.spawn(function()
+            local hooked = false
+            while not hooked do
+                for _, o in ipairs(getgc(true)) do
+                    if type(o) == 'table' and rawget(o, '_Setup') and rawget(o, '_GetDefaultMuzzlePosition')
+                        and rawget(o, '_UpdateHiddenArmSubmodels') then
+                        local origGet = o.Get
+                        if type(origGet) == 'function' then
+                            rawset(o, 'Get', function(self, key, ...)
+                                if key == 'Charm' and Toggles.IS_RankedCharm.Value then
+                                    local w = wanted()
+                                    return { Name = w.Name, Metadata = table.clone(w.Metadata) }
+                                end
+                                return origGet(self, key, ...)
+                            end)
+                            hooked = true
+                        end
+                        break
+                    end
+                end
+                if not hooked then task.wait(5) end
             end
         end)
     end)
