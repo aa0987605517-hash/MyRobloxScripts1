@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 11
+local UE_BUILD = 12
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -495500,56 +495500,19 @@ task.spawn(function()
         end)
     end)
 
-    -- Our own independent IS_* persistence (separate from SaveManager).
-    -- This keeps our values across injections even when SaveManager's
-    -- autoload is toggled, without touching its Parser (which was wiping
-    -- our groupbox on some builds).
+    -- Settings are saved only with the built-in config (Settings tab). Its
+    -- auto load runs before these added groupboxes exist, so their IS_*
+    -- values are skipped; load the auto-load config once more now.
     task.spawn(function()
-        if type(writefile) ~= "function" or type(readfile) ~= "function" or type(isfile) ~= "function" then
-            return  -- executor missing file API
-        end
-        local HttpSvc = game:GetService("HttpService")
-        local SAVE_FILE = "NebulaCounter_IS.json"
-
-        local function saveIS()
-            local data = {}
-            for k, t in pairs(Toggles) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(t) == "table" and t.Value ~= nil then
-                    data[k] = { t = "T", v = t.Value }
-                end
-            end
-            for k, o in pairs(Options) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(o) == "table" and o.Value ~= nil then
-                    data[k] = { t = "O", v = o.Value }
-                end
-            end
-            pcall(function()
-                writefile(SAVE_FILE, HttpSvc:JSONEncode(data))
-            end)
-        end
-
-        local function loadIS()
-            if not isfile(SAVE_FILE) then return end
-            local okR, raw = pcall(readfile, SAVE_FILE)
-            if not okR then return end
-            local okJ, data = pcall(function() return HttpSvc:JSONDecode(raw) end)
-            if not okJ or type(data) ~= "table" then return end
-            for k, entry in pairs(data) do
-                if type(k) == "string" and k:sub(1, 3) == "IS_" and type(entry) == "table" then
-                    pcall(function()
-                        if entry.t == "T" and Toggles[k] then
-                            Toggles[k]:SetValue(entry.v)
-                        elseif entry.t == "O" and Options[k] then
-                            Options[k]:SetValue(entry.v)
-                        end
-                    end)
-                end
-            end
-        end
-
-        -- Load saved values after UI is fully ready
         task.wait(1.5)
-        pcall(loadIS)
+        pcall(function()
+            local sm = getgenv().SaveManager
+            local file = sm and sm.Folder and (sm.Folder .. '/settings/autoload.txt')
+            if file and isfile(file) then
+                local name = readfile(file)
+                if name ~= '' then sm:Load(name) end
+            end
+        end)
 
         -- Re-apply features whose enable path isn't triggered by SetValue
         task.wait(0.3)
@@ -495562,30 +495525,6 @@ task.spawn(function()
             if Toggles.IS_MuteWeapon and Toggles.IS_MuteWeapon.Value and getgenv().__ncMuteWeaponEnable then
                 getgenv().__ncMuteWeaponEnable()
             end
-        end)
-
-        -- Saved only when the button is pressed (no periodic autosave)
-        pcall(function()
-            local settingsTab
-            for name, tab in pairs(lib.Window.Tabs) do
-                if tostring(name):lower() == 'settings' then settingsTab = tab; break end
-            end
-            if not settingsTab then return end
-            local saveGroup = settingsTab:AddLeftGroupbox('Save')
-            saveGroup:AddButton({
-                Text = 'Save settings',
-                Func = function()
-                    saveIS()
-                    lib:Notify('[Save] settings saved to ' .. SAVE_FILE, 3)
-                end,
-            })
-            saveGroup:AddButton({
-                Text = 'Load settings',
-                Func = function()
-                    loadIS()
-                    lib:Notify('[Save] settings loaded from ' .. SAVE_FILE, 3)
-                end,
-            })
         end)
     end)
 
