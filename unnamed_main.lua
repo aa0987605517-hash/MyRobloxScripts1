@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 3
+local UE_BUILD = 4
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -497370,6 +497370,23 @@ task.spawn(function()
         end
 
         local spamConn, originalCFrame = nil, nil
+        -- ragebot moves the character every frame during a fight (attack/hide
+        -- cycle) and overrides the void teleports, so it is paused while spamming
+        local pausedRagebot = false
+        local function pauseRagebot()
+            local rb = Toggles.ragebot_enabled
+            if rb and rb.Value then
+                pausedRagebot = true
+                rb:SetValue(false)
+            end
+        end
+        local function resumeRagebot()
+            if pausedRagebot then
+                pausedRagebot = false
+                local rb = Toggles.ragebot_enabled
+                if rb and not rb.Value then rb:SetValue(true) end
+            end
+        end
         local function rootPart()
             local c = PlayersV.LocalPlayer.Character
             return c and c:FindFirstChild("HumanoidRootPart")
@@ -497378,6 +497395,7 @@ task.spawn(function()
             if spamConn then return end
             local hrp = rootPart()
             if not hrp then return end
+            pauseRagebot()
             originalCFrame = hrp.CFrame
             anchorPos = hrp.Position
             spamConn = RunServiceV.Heartbeat:Connect(function(dt)
@@ -497403,11 +497421,13 @@ task.spawn(function()
                 root.CFrame = originalCFrame
             end
             originalCFrame, anchorPos = nil, nil
+            resumeRagebot()
         end
         -- respawn: old position is meaningless
         PlayersV.LocalPlayer.CharacterAdded:Connect(function()
             if spamConn then spamConn:Disconnect(); spamConn = nil end
             originalCFrame, anchorPos = nil, nil
+            resumeRagebot()
         end)
 
         local active = false
