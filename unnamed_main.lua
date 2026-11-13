@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 8
+local UE_BUILD = 9
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -497294,21 +497294,26 @@ task.spawn(function()
                 end
                 return p
             end
-            local torso = part(Vector3.new(2, 1.3, 1), CFrame.new(0, 0, 0), BODY)
+            -- chibi keychain body like the game's avatar charms: big head,
+            -- small torso, short arms and two short legs. Spans y = -1.3
+            -- (feet) .. 2.72 (hair top) with the torso centred at 0.
+            local torso = part(Vector3.new(1.2, 1.1, 0.65), CFrame.new(0, 0, 0), BODY)
             root = torso
-            part(Vector3.new(0.9, 1.3, 0.95), CFrame.new(-1.48, 0, 0), BODY)
-            part(Vector3.new(0.9, 1.3, 0.95), CFrame.new(1.48, 0, 0), BODY)
-            part(Vector3.new(0.9, 0.8, 0.95), CFrame.new(0.47, -1.07, 0), BODY)
+            part(Vector3.new(0.42, 1.0, 0.6), CFrame.new(-0.83, 0.03, 0), BODY)
+            part(Vector3.new(0.42, 1.0, 0.6), CFrame.new(0.83, 0.03, 0), BODY)
+            part(Vector3.new(0.55, 0.75, 0.6), CFrame.new(-0.3, -0.93, 0), BODY)
+            part(Vector3.new(0.55, 0.75, 0.6), CFrame.new(0.3, -0.93, 0), BODY)
+            part(Vector3.new(1.5, 1.35, 1.25), CFrame.new(0, 1.25, 0), HAIR)
             for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
                 local sg = Instance.new("SurfaceGui")
                 sg.Face = face
                 sg.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-                sg.CanvasSize = Vector2.new(220, 230)
+                sg.CanvasSize = Vector2.new(240, 220)
                 sg.LightInfluence = 0
                 local tl = Instance.new("TextLabel")
                 tl.BackgroundTransparency = 1
-                tl.Size = UDim2.new(0.86, 0, 0.3, 0)
-                tl.Position = UDim2.new(0.12, 0, 0.22, 0)
+                tl.Size = UDim2.new(0.92, 0, 0.36, 0)
+                tl.Position = UDim2.new(0.04, 0, 0.3, 0)
                 tl.Text = "你媽炸了"
                 tl.TextScaled = true
                 tl.TextColor3 = Color3.fromRGB(175, 175, 175)
@@ -497317,11 +497322,11 @@ task.spawn(function()
             end
             -- hair: the picture's hair on four crossed planes; part locks if
             -- the image can't load
-            local hc = Vector3.new(-0.07, 2.34, 0)
+            local hc = Vector3.new(0, 1.42, 0)
             local hairImg = getHairAsset()
             if hairImg then
                 for _, deg in ipairs({ 0, 45, 90, 135 }) do
-                    local plane = part(Vector3.new(3.0, 3.32, 0.02), CFrame.new(hc) * CFrame.Angles(0, math.rad(deg), 0), HAIR)
+                    local plane = part(Vector3.new(2.9, 3.0, 0.02), CFrame.new(hc) * CFrame.Angles(0, math.rad(deg), 0), HAIR)
                     plane.Transparency = 1
                     for _, f in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
                         local dcl = Instance.new("Decal")
@@ -497334,7 +497339,7 @@ task.spawn(function()
                 for k = 1, 18 do
                     local yaw = (k / 18) * math.pi * 2
                     local out = Vector3.new(math.cos(yaw), 0, math.sin(yaw))
-                    local pos, dir = hc + out * 0.8, out * 0.45 + Vector3.new(0, -1, 0)
+                    local pos, dir = hc + out * 0.7, out * 0.45 + Vector3.new(0, -1, 0)
                     local c = pos + dir.Unit * 0.5
                     part(Vector3.new(0.45, 0.08, 1.0), CFrame.lookAt(c, c + dir, Vector3.yAxis), HAIR)
                 end
@@ -497359,20 +497364,21 @@ task.spawn(function()
             table.clear(hidden)
         end
 
+        -- A charm model is named after the charm (e.g. "hoppy819") and has a
+        -- "Primary" part and a "Ring" hook. Only your own first-person weapon
+        -- (and your character) are searched, not other players' guns.
+        local function isCharm(d)
+            return d:IsA("Model") and d:FindFirstChild("Primary") ~= nil and d:FindFirstChild("Ring", true) ~= nil
+        end
         local function findCharms()
             local out = {}
-            local roots = { workspace:FindFirstChild("ViewModels"), workspace.CurrentCamera }
-            for _, p in ipairs(PlayersE:GetPlayers()) do roots[#roots + 1] = p.Character end
+            local vms = workspace:FindFirstChild("ViewModels")
+            local roots = { vms and vms:FindFirstChild("FirstPerson"), workspace.CurrentCamera, PlayersE.LocalPlayer.Character }
             for _, root in ipairs(roots) do
                 if root then
                     for _, d in ipairs(root:GetDescendants()) do
-                        if d.Name:lower():find("elixir", 1, true) and (d:IsA("Model") or d:IsA("BasePart") or d:IsA("Folder")) then
-                            local p, top = d.Parent, true
-                            while p and p ~= root do
-                                if p.Name:lower():find("elixir", 1, true) then top = false; break end
-                                p = p.Parent
-                            end
-                            if top then out[#out + 1] = d end
+                        if d.Name ~= "UE_NmzlFig" and isCharm(d) and not d:FindFirstAncestor("UE_NmzlFig") then
+                            out[#out + 1] = d
                         end
                     end
                 end
@@ -497389,17 +497395,29 @@ task.spawn(function()
             if #parts == 0 then return end
             local main = parts[1]
             for _, p in ipairs(parts) do if p.Size.Magnitude > main.Size.Magnitude then main = p end end
-            local cf, size
-            if el:IsA("Model") then cf, size = el:GetBoundingBox() else cf, size = main.CFrame, main.Size end
+            -- avatar charms are one textured MeshPart: put the figure exactly
+            -- where that body hangs; otherwise use the whole charm's box
+            local body
+            for _, p in ipairs(parts) do
+                if p:IsA("MeshPart") and p.TextureID ~= "" and p.Name ~= "Ring"
+                    and (not body or p.Size.Y > body.Size.Y) then body = p end
+            end
+            local cf, hgt
+            if body then
+                cf, hgt = body.CFrame, body.Size.Y
+            else
+                local size
+                if el:IsA("Model") then cf, size = el:GetBoundingBox() else cf, size = main.CFrame, main.Size end
+                hgt = math.max(size.X, size.Y, size.Z)
+            end
             local scale = (tonumber(Options.IS_ElixirFigScale and Options.IS_ElixirFigScale.Value) or 100) / 100
-            local hgt = math.max(size.X, size.Y, size.Z) * scale
-            -- figure spans y = -1.47 .. 4.0 (foot to hair top), centre ~1.27
-            local S = hgt / 5.47
+            -- figure spans y = -1.3 .. 2.92 (feet to hair top), centre 0.81
+            local S = hgt * scale / 4.22
             for _, old in ipairs(main.Parent:GetChildren()) do
                 if old.Name == "UE_NmzlFig" then old:Destroy() end
             end
-            local fig, torso = buildFigure(cf * CFrame.new(0, -1.27 * S, 0), S)
-            local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = main, torso; w.Parent = torso
+            local fig, torso = buildFigure(cf * CFrame.new(0, -0.81 * S, 0), S)
+            local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = body or main, torso; w.Parent = torso
             for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
             for _, d in ipairs(el:GetDescendants()) do
                 if d:IsA("Decal") or d:IsA("Texture") then hide(d, "Transparency", 1)
