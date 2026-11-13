@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 7
+local UE_BUILD = 8
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -497400,12 +497400,13 @@ task.spawn(function()
             end
             local fig, torso = buildFigure(cf * CFrame.new(0, -1.27 * S, 0), S)
             local w = Instance.new("WeldConstraint"); w.Part0, w.Part1 = main, torso; w.Parent = torso
-            fig.Parent = main.Parent
             for _, p in ipairs(parts) do hide(p, "Transparency", 1) end
             for _, d in ipairs(el:GetDescendants()) do
                 if d:IsA("Decal") or d:IsA("Texture") then hide(d, "Transparency", 1)
                 elseif d:IsA("SurfaceGui") or d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") then hide(d, "Enabled", false) end
             end
+            -- parented after hiding, so the figure's own hair decals and text stay visible
+            fig.Parent = main.Parent
             made[el] = fig
         end
 
