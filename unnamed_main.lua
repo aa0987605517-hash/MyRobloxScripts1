@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 9
+local UE_BUILD = 10
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -497386,7 +497386,46 @@ task.spawn(function()
             return out
         end
 
+        -- Avatar charms with a repainted texture keep their own body and only
+        -- get the new texture (black outfit, black hair, 你媽炸了 on the chest).
+        -- Keyed by the charm mesh's original texture id.
+        local CUSTOM_TEXTURES = {
+            ["101276931691044"] = "hoppy819_black.png", -- hoppy819
+        }
+        local texAssets = {}
+        local function getTexAsset(file)
+            if texAssets[file] ~= nil then return texAssets[file] or nil end
+            local ok, res = pcall(function()
+                local path = "unnamed/" .. file
+                if not isfolder("unnamed") then makefolder("unnamed") end
+                if not (isfile(path) and readfile(path):sub(1, 4) == "\137PNG") then
+                    local body = game:HttpGet("https://raw.githubusercontent.com/aa0987605517-hash/MyRobloxScripts1/claude/loving-edison-7k2co2/assets/" .. file)
+                    if type(body) ~= "string" or body:sub(1, 4) ~= "\137PNG" then error("texture download failed") end
+                    writefile(path, body)
+                end
+                return getcustomasset(path)
+            end)
+            texAssets[file] = (ok and type(res) == "string" and res ~= "") and res or false
+            if not texAssets[file] then warn("[CharmFig] " .. file .. ": " .. tostring(res)) end
+            return texAssets[file] or nil
+        end
+
         local function replace(el)
+            for _, d in ipairs(el:GetDescendants()) do
+                if d:IsA("MeshPart") then
+                    local id = (hidden[d] and hidden[d].TextureID or d.TextureID):match("%d+")
+                    local file = id and CUSTOM_TEXTURES[id]
+                    local asset = file and getTexAsset(file)
+                    if asset then
+                        hide(d, "TextureID", asset)
+                        local marker = Instance.new("Folder")
+                        marker.Name = "UE_NmzlFig"
+                        marker.Parent = el
+                        made[el] = marker
+                        return
+                    end
+                end
+            end
             local parts = {}
             if el:IsA("BasePart") then parts[1] = el end
             for _, d in ipairs(el:GetDescendants()) do
