@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 10
+local UE_BUILD = 11
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -495564,11 +495564,28 @@ task.spawn(function()
             end
         end)
 
-        -- Periodic save every 3 seconds (debounced; cheap since just a json write)
-        task.spawn(function()
-            while task.wait(3) do
-                pcall(saveIS)
+        -- Saved only when the button is pressed (no periodic autosave)
+        pcall(function()
+            local settingsTab
+            for name, tab in pairs(lib.Window.Tabs) do
+                if tostring(name):lower() == 'settings' then settingsTab = tab; break end
             end
+            if not settingsTab then return end
+            local saveGroup = settingsTab:AddLeftGroupbox('Save')
+            saveGroup:AddButton({
+                Text = 'Save settings',
+                Func = function()
+                    saveIS()
+                    lib:Notify('[Save] settings saved to ' .. SAVE_FILE, 3)
+                end,
+            })
+            saveGroup:AddButton({
+                Text = 'Load settings',
+                Func = function()
+                    loadIS()
+                    lib:Notify('[Save] settings loaded from ' .. SAVE_FILE, 3)
+                end,
+            })
         end)
     end)
 
