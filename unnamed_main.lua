@@ -497271,13 +497271,12 @@ task.spawn(function()
         local function hpOf(char)
             if not char then return nil end
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then return hum.Health end
+            if hum and hum.Health > 0 then return hum.Health end
             local a = char:GetAttribute("Health")
-            if type(a) == "number" then return a end
+            if type(a) == "number" and a > 0 then return a end
             return nil
         end
 
-        -- enemy below my HP, measured from where I stood before voiding
         local anchorPos = nil
         local function lowerEnemy()
             local me = PlayersV.LocalPlayer
@@ -497287,16 +497286,22 @@ task.spawn(function()
             if not myHp or myHp <= 0 or not myRoot then return nil end
             local from = anchorPos or myRoot.Position
             local range = tonumber(Options.IS_AutoVoidRange and Options.IS_AutoVoidRange.Value) or 300
+            local bestTarget, bestHP = nil, math.huge
             for _, p in ipairs(PlayersV:GetPlayers()) do
                 if p ~= me and not (me.Team and p.Team == me.Team) then
                     local c = p.Character
                     local hp = hpOf(c)
                     local r = c and c:FindFirstChild("HumanoidRootPart")
-                    if hp and hp > 0 and r and hp < myHp and (r.Position - from).Magnitude <= range then
-                        return p, hp, myHp
+                    if hp and hp > 0 and r and hp < myHp then
+                        local dist = (r.Position - from).Magnitude
+                        if dist <= range and hp < bestHP then
+                            bestTarget = p
+                            bestHP = hp
+                        end
                     end
                 end
             end
+            if bestTarget then return bestTarget, bestHP, myHp end
             return nil
         end
 
@@ -497407,7 +497412,7 @@ task.spawn(function()
 
         local active = false
         task.spawn(function()
-            while task.wait(0.2) do
+            while task.wait(0.1) do
                 local ok, err = pcall(function()
                     local on = Toggles.IS_AutoVoidHP and Toggles.IS_AutoVoidHP.Value
                     local target, hp, myHp
@@ -497418,9 +497423,9 @@ task.spawn(function()
                         active = want
                         if on and Toggles.IS_AutoVoidNotify and Toggles.IS_AutoVoidNotify.Value then
                             if want then
-                                lib:Notify(("[AutoVoid] ON - %s %d HP < you %d HP"):format(target.Name, math.floor(hp), math.floor(myHp)), 3)
+                                pcall(function() lib:Notify(("[AutoVoid] ON - %s %dHP < you %dHP"):format(target.Name, math.floor(hp), math.floor(myHp)), 3) end)
                             else
-                                lib:Notify("[AutoVoid] OFF - no enemy below your HP", 3)
+                                pcall(function() lib:Notify("[AutoVoid] OFF", 3) end)
                             end
                         end
                     end
