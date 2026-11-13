@@ -50,7 +50,7 @@ local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements
 -- Bump UE_BUILD whenever a new copy should replace an older one that is
 -- already running (e.g. an old autoexec / teleport-queued copy that loaded
 -- first on a new server).
-local UE_BUILD = 4
+local UE_BUILD = 5
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
@@ -497236,6 +497236,117 @@ task.spawn(function()
 
 
 
+
+    -- === RANKED CHARM (Main tab) ===
+    -- Puts a Season rank charm with a chosen rank on every weapon by editing
+    -- the client's copy of the player data. Only you can see it.
+    local okRc, errRc = pcall(function()
+        local mainTabR = miscTab
+        for name, tab in pairs(lib.Window.Tabs) do
+            if tostring(name):lower() == 'main' then mainTabR = tab; break end
+        end
+
+        local SEASONS = { 'Season 0', 'Season 1', 'Season 2', 'Season 3' }
+        local RANKS = {
+            { 'Bronze 1', 0 }, { 'Bronze 2', 200 }, { 'Bronze 3', 400 },
+            { 'Silver 1', 600 }, { 'Silver 2', 800 }, { 'Silver 3', 1000 },
+            { 'Gold 1', 1200 }, { 'Gold 2', 1400 }, { 'Gold 3', 1600 },
+            { 'Platinum 1', 1800 }, { 'Platinum 2', 2000 }, { 'Platinum 3', 2200 },
+            { 'Diamond 1', 2400 }, { 'Diamond 2', 2600 }, { 'Diamond 3', 2800 },
+            { 'Onyx 1', 3000 }, { 'Onyx 2', 3200 }, { 'Onyx 3', 3400 },
+            { 'Nemesis', 3600 }, { 'Archnemesis', 3600 },
+        }
+        local rankNames, rankElo = {}, {}
+        for _, r in ipairs(RANKS) do table.insert(rankNames, r[1]); rankElo[r[1]] = r[2] end
+
+        local rg = mainTabR:AddLeftGroupbox('Ranked Charm')
+        rg:AddToggle('IS_RankedCharm', {
+            Text = 'Ranked charm on all weapons',
+            Default = false,
+            Tooltip = 'Client-side only: other players do not see it',
+        })
+        rg:AddDropdown('IS_RankedCharmSeason', { Text = 'Season', Values = SEASONS, Default = 4 })
+        rg:AddDropdown('IS_RankedCharmRank', { Text = 'Rank', Values = rankNames, Default = #rankNames })
+        rg:AddInput('IS_RankedCharmLb', { Text = 'Leaderboard #', Default = '1', Placeholder = 'blank = none', Numeric = true })
+
+        local pdc
+        local function findPDC()
+            if pdc then return pdc end
+            for _, o in ipairs(getgc(true)) do
+                if type(o) == 'table' then
+                    local mt = getmetatable(o)
+                    if type(mt) == 'table' and type(rawget(mt, '__index')) == 'table'
+                        and rawget(mt.__index, 'GetWeaponData') and rawget(o, 'CurrentData') then
+                        pdc = o
+                        break
+                    end
+                end
+            end
+            return pdc
+        end
+
+        local originals = setmetatable({}, { __mode = 'k' })
+        local function wanted()
+            local rank = Options.IS_RankedCharmRank.Value
+            local lb = tonumber(Options.IS_RankedCharmLb.Value or '')
+            if lb then lb = math.max(1, math.floor(lb)) end
+            if rank == 'Archnemesis' and not lb then lb = 1 end
+            return {
+                Name = Options.IS_RankedCharmSeason.Value,
+                Metadata = { SeasonELO = rankElo[rank] + 1, SeasonLeaderboardRank = lb },
+            }
+        end
+        local function same(a, b)
+            return type(a) == 'table' and a.Name == b.Name and type(a.Metadata) == 'table'
+                and a.Metadata.SeasonELO == b.Metadata.SeasonELO
+                and a.Metadata.SeasonLeaderboardRank == b.Metadata.SeasonLeaderboardRank
+        end
+
+        local function apply()
+            local p = findPDC()
+            local data = p and p.CurrentData and p.CurrentData.Data
+            local inv = data and data.WeaponInventory
+            if type(inv) ~= 'table' then return 0 end
+            local want, n = wanted(), 0
+            for _, wd in pairs(inv) do
+                if type(wd) == 'table' and not same(wd.Charm, want) then
+                    if originals[wd] == nil then originals[wd] = wd.Charm or false end
+                    wd.Charm = { Name = want.Name, Metadata = table.clone(want.Metadata) }
+                    n = n + 1
+                end
+            end
+            return n
+        end
+        local function restore()
+            for wd, charm in pairs(originals) do
+                wd.Charm = charm or nil
+            end
+            table.clear(originals)
+        end
+
+        local function refresh()
+            if Toggles.IS_RankedCharm.Value then
+                local n = apply()
+                if n > 0 then lib:Notify(('[RankedCharm] %s %s on %d weapons (re-equip to see it)'):format(Options.IS_RankedCharmSeason.Value, Options.IS_RankedCharmRank.Value, n), 3) end
+            end
+        end
+        Toggles.IS_RankedCharm:OnChanged(function(on)
+            if on then refresh() else restore() end
+        end)
+        Options.IS_RankedCharmSeason:OnChanged(refresh)
+        Options.IS_RankedCharmRank:OnChanged(refresh)
+        Options.IS_RankedCharmLb:OnChanged(refresh)
+
+        -- server data updates replace the weapon tables, so re-apply
+        task.spawn(function()
+            while task.wait(2) do
+                if Toggles.IS_RankedCharm.Value then pcall(apply) end
+            end
+        end)
+    end)
+    if not okRc then
+        warn('[RankedCharm] failed to load: ' .. tostring(errRc))
+    end
 
     -- === AUTO VOID SPAM BY HEALTH (Main tab) ===
     -- While an enemy near you has less health than you, keeps teleporting
