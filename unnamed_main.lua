@@ -181,7 +181,16 @@ end
 
 local function __step(id)
     if setIdentity then
-        setIdentity(desiredIdentity[coroutine.running()] or 8)
+        -- Only manage our own (executor) threads. Hooked functions also run
+        -- inside the game's threads (identity 2); forcing those to 8 broke
+        -- the game's own require() calls and its lobby UI / weapon select.
+        local thread = coroutine.running()
+        local d = desiredIdentity[thread]
+        if d == nil then
+            d = getIdentity() >= 8 and 8 or false
+            desiredIdentity[thread] = d
+        end
+        if d then setIdentity(d) end
     end
     if control.stopped then
         -- leftover connections of a stopped copy used to throw this every
