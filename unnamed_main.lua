@@ -47,33 +47,16 @@ local arguments = table.pack(...)
 local sharedEnv = getgenv and getgenv() or _G
 local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements')
 
--- Bump UE_BUILD whenever a new copy should replace an older one that is
--- already running (e.g. an old autoexec / teleport-queued copy that loaded
--- first on a new server).
-local UE_BUILD = 12
+-- A running copy is never replaced: stopping it left its event connections
+-- throwing "execution stopped" every frame, and the new copy crashed
+-- re-patching game functions the old one had already patched. Rejoin to
+-- run a newer version.
+local UE_BUILD = 13
 local alreadyRunning = (type(previous) == 'table' and (previous.status == 'starting' or previous.status == 'entry_returned'))
     or rawget(sharedEnv, 'UE_LOADED') == true
 
 if alreadyRunning then
-    local runningBuild = rawget(sharedEnv, 'UE_BUILD')
-    if type(runningBuild) == 'number' and runningBuild >= UE_BUILD then
-        return previous
-    end
-
-    -- An older build owns the session: unload its UI and take over.
-    local oldLib = rawget(sharedEnv, 'Library')
-    if type(oldLib) == 'table' then
-        pcall(function() if type(oldLib.Unload) == 'function' then oldLib:Unload() end end)
-        pcall(function()
-            if typeof(oldLib.ScreenGui) == 'Instance' then oldLib.ScreenGui:Destroy() end
-        end)
-    end
-    sharedEnv.Library = nil
-    sharedEnv.Options = nil
-    sharedEnv.Toggles = nil
-    sharedEnv.UE_LOADED = nil
-    sharedEnv['Unnamed enhancement- discord.gg/enhancements'] = nil
-    previous = nil
+    return previous
 end
 sharedEnv.UE_BUILD = UE_BUILD
 
