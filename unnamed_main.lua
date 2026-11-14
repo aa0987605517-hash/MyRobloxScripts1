@@ -43,6 +43,16 @@
 
 ]]
 
+-- Teleport-queued (queue_on_teleport) and some autoexec runs start at a low
+-- thread identity that can't touch many Instances ("lacking capability
+-- Plugin"), which made startup fail and every leftover connection throw
+-- "execution stopped". Raise the identity before anything else runs.
+pcall(function()
+    local setIdentity = setthreadidentity or set_thread_identity or setidentity
+        or (syn and syn.set_thread_identity)
+    if type(setIdentity) == 'function' then setIdentity(8) end
+end)
+
 local arguments = table.pack(...)
 local sharedEnv = getgenv and getgenv() or _G
 local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements')
@@ -249,6 +259,11 @@ function Backend.initialize(data)
         end
 
         local ok, err = pcall(queue, [=[
+pcall(function()
+    local setIdentity = setthreadidentity or set_thread_identity or setidentity
+        or (syn and syn.set_thread_identity)
+    if type(setIdentity) == 'function' then setIdentity(8) end
+end)
 local function flag(name)
     if type(isfile) ~= 'function' then return false end
     local ok, exists = pcall(isfile, name)
