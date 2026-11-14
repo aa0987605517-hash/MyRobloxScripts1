@@ -102,8 +102,27 @@ local budgets = setmetatable({}, {
 local schedulerFrame = 0
 local heartbeatConnection
 
+-- This executor resumes a thread at its original identity after some
+-- yields (WaitForChild, HttpGet, ...), undoing setthreadidentity(8); the
+-- next Instance access then failed with "lacking capability Plugin" in the
+-- middle of startup. Every VM step goes through __step, so restore it there.
+local getIdentity = type(getthreadidentity) == 'function' and getthreadidentity
+    or type(get_thread_identity) == 'function' and get_thread_identity or nil
+local setIdentity = type(setthreadidentity) == 'function' and setthreadidentity
+    or type(set_thread_identity) == 'function' and set_thread_identity
+    or type(setidentity) == 'function' and setidentity or nil
+if not (getIdentity and setIdentity) then getIdentity, setIdentity = nil, nil end
+
 local function __step(id)
+    if getIdentity and getIdentity() < 8 then
+        pcall(setIdentity, 8)
+    end
     if control.stopped then
+        -- leftover connections of a stopped copy used to throw this every
+        -- frame; park the thread silently instead (nothing resumes it)
+        if coroutine.isyieldable() then
+            while true do coroutine.yield() end
+        end
         error('execution stopped', 0)
     end
 
