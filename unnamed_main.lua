@@ -53,6 +53,19 @@ pcall(function()
     if type(setIdentity) == 'function' then setIdentity(8) end
 end)
 
+-- Some loaders run us in a thread whose privileges can't be raised. Starting
+-- there failed half-way and left connections spamming "execution stopped",
+-- so bail out cleanly instead.
+do
+    local okCg, coreGui = pcall(function() return game:GetService('CoreGui') end)
+    if not okCg or coreGui == nil then
+        local okId, id = pcall(function() return getthreadidentity and getthreadidentity() end)
+        warn(('[UE] not started: this thread lacks permissions (identity %s). Run the script manually.'):format(
+            tostring(okId and id or '?')))
+        return nil
+    end
+end
+
 local arguments = table.pack(...)
 local sharedEnv = getgenv and getgenv() or _G
 local previous = rawget(sharedEnv, 'Unnamed enhancement- discord.gg/enhancements')
