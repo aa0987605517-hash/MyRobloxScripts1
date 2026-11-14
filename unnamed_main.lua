@@ -43,25 +43,50 @@
 
 ]]
 
--- Teleport-queued (queue_on_teleport) and some autoexec runs start at a low
--- thread identity that can't touch many Instances ("lacking capability
--- Plugin"), which made startup fail and every leftover connection throw
--- "execution stopped". Raise the identity before anything else runs.
-pcall(function()
-    local setIdentity = setthreadidentity or set_thread_identity or setidentity
-        or (syn and syn.set_thread_identity)
-    if type(setIdentity) == 'function' then setIdentity(8) end
-end)
-
--- Some loaders run us in a thread whose privileges can't be raised. Starting
--- there failed half-way and left connections spamming "execution stopped",
--- so bail out cleanly instead.
+-- Teleport-queued (queue_on_teleport) runs can start at a low thread
+-- identity that can't touch many Instances ("lacking capability Plugin").
+-- Raise it only when it is below 8: calling setthreadidentity on a normal
+-- executor thread may reset its capabilities, and normal runs worked fine.
+-- Each start is logged to unnamed/ue_start.log for diagnosis.
+local __ueStartLog = {}
+local function __ueAppendLog(entry)
+    pcall(function()
+        local line = game:GetService('HttpService'):JSONEncode(entry) .. '\n'
+        if not isfolder('unnamed') then makefolder('unnamed') end
+        local path = 'unnamed/ue_start.log'
+        if isfile(path) then appendfile(path, line) else writefile(path, line) end
+    end)
+end
 do
+    local function ident()
+        local ok, id = pcall(function() return getthreadidentity and getthreadidentity() end)
+        return ok and id or nil
+    end
+    local before = ident()
+    if type(before) == 'number' and before < 8 then
+        pcall(function()
+            local setIdentity = setthreadidentity or set_thread_identity or setidentity
+                or (syn and syn.set_thread_identity)
+            if type(setIdentity) == 'function' then setIdentity(8) end
+        end)
+    end
     local okCg, coreGui = pcall(function() return game:GetService('CoreGui') end)
+    __ueStartLog = {
+        time = os.date and os.date('%Y-%m-%d %H:%M:%S') or '?',
+        clock = os.clock(),
+        identityBefore = before,
+        identityAfter = ident(),
+        coreGui = okCg and coreGui ~= nil,
+        caller = (function()
+            local ok, s = pcall(function() return debug.info(3, 's') end)
+            return ok and tostring(s) or '?'
+        end)(),
+    }
     if not okCg or coreGui == nil then
-        local okId, id = pcall(function() return getthreadidentity and getthreadidentity() end)
-        warn(('[UE] not started: this thread lacks permissions (identity %s). Run the script manually.'):format(
-            tostring(okId and id or '?')))
+        __ueStartLog.result = 'not started: no permissions'
+        __ueAppendLog(__ueStartLog)
+        warn(('[UE] not started: this thread lacks permissions (identity %s -> %s). Run the script manually.'):format(
+            tostring(before), tostring(__ueStartLog.identityAfter)))
         return nil
     end
 end
@@ -113,9 +138,50 @@ local setIdentity = type(setthreadidentity) == 'function' and setthreadidentity
     or type(setidentity) == 'function' and setidentity or nil
 if not (getIdentity and setIdentity) then getIdentity, setIdentity = nil, nil end
 
+-- On this executor a thread can report identity 8 while having lost the
+-- capabilities that go with it (seen right after the script's own identity
+-- switches): it then can't even read the menu it just built. Calling
+-- setthreadidentity again restores them, so __step re-asserts the identity
+-- each thread last asked for (default 8). The setters are wrapped only to
+-- record that request; they still do the same thing.
+local desiredIdentity = setmetatable({}, { __mode = 'k' })
+if setIdentity then
+    local genv = getgenv and getgenv() or _G
+    for _, name in ipairs({ 'setthreadidentity', 'set_thread_identity', 'setidentity' }) do
+        local original = rawget(genv, name)
+        if type(original) == 'function' and not rawget(genv, '__ue_wrapped_' .. name) then
+            local wrapper = function(n, ...)
+                desiredIdentity[coroutine.running()] = n
+                return original(n, ...)
+            end
+            if type(newcclosure) == 'function' then
+                local ok, wrapped = pcall(newcclosure, wrapper)
+                if ok then wrapper = wrapped end
+            end
+            rawset(genv, name, wrapper)
+            rawset(genv, '__ue_wrapped_' .. name, original)
+        end
+    end
+end
+
+-- Method lookup for the VM (obj:Method()). Another copy's menu left in
+-- CoreGui can be locked for this thread ("lacking capability Plugin"); the
+-- startup walk through CoreGui then died on its frames. Locked objects are
+-- treated as empty instead.
+local function __index(o, k) return o[k] end
+local function __emptyList() return {} end
+local function __noop() return nil end
+local function __safeMethod(o, k)
+    if typeof(o) ~= 'Instance' then return o[k] end
+    local ok, v = pcall(__index, o, k)
+    if ok then return v end
+    if k == 'GetChildren' or k == 'GetDescendants' then return __emptyList end
+    return __noop
+end
+
 local function __step(id)
-    if getIdentity and getIdentity() < 8 then
-        pcall(setIdentity, 8)
+    if setIdentity then
+        setIdentity(desiredIdentity[coroutine.running()] or 8)
     end
     if control.stopped then
         -- leftover connections of a stopped copy used to throw this every
@@ -204,28 +270,41 @@ local function runApplication()
         return table.pack(entry(table.unpack(arguments, 1, arguments.n)))
     end, traceback)
 
+    local function logStart(res)
+        __ueStartLog.result = res
+        pcall(function() __ueStartLog.identityAtEnd = getthreadidentity and getthreadidentity() end)
+        __ueAppendLog(__ueStartLog)
+    end
+
     if not ok then
         control.error = result
         control.status = 'error'
         control.stopped = true
+        logStart('error: ' .. tostring(result))
 
-        if heartbeatConnection then
-            heartbeatConnection:Disconnect()
-        end
+        -- each cleanup step can itself fail in a thread without permissions;
+        -- an error here used to escape and leave a half-built menu behind
+        pcall(function()
+            if heartbeatConnection then heartbeatConnection:Disconnect() end
+        end)
 
         local failedLibrary = rawget(sharedEnv, 'Library')
 
         if type(failedLibrary) == 'table' and failedLibrary ~= previousLibrary then
-            if type(failedLibrary.Signals) == 'table' then
-                for _, signal in failedLibrary.Signals do
-                    if typeof(signal) == 'RBXScriptConnection' then
-                        signal:Disconnect()
+            pcall(function()
+                if type(failedLibrary.Signals) == 'table' then
+                    for _, signal in failedLibrary.Signals do
+                        if typeof(signal) == 'RBXScriptConnection' then
+                            pcall(signal.Disconnect, signal)
+                        end
                     end
                 end
-            end
-            if typeof(failedLibrary.ScreenGui) == 'Instance' then
-                failedLibrary.ScreenGui:Destroy()
-            end
+            end)
+            pcall(function()
+                if typeof(failedLibrary.ScreenGui) == 'Instance' then
+                    failedLibrary.ScreenGui:Destroy()
+                end
+            end)
         end
 
         sharedEnv.Library = previousLibrary
@@ -236,6 +315,7 @@ local function runApplication()
         return control
     end
 
+    logStart('ok')
     control.status = 'entry_returned'
     control.elapsed = os.clock() - control.started
 
@@ -292,9 +372,10 @@ function Backend.initialize(data)
 
         local ok, err = pcall(queue, [=[
 pcall(function()
+    local id = getthreadidentity and getthreadidentity()
     local setIdentity = setthreadidentity or set_thread_identity or setidentity
         or (syn and syn.set_thread_identity)
-    if type(setIdentity) == 'function' then setIdentity(8) end
+    if type(id) == 'number' and id < 8 and type(setIdentity) == 'function' then setIdentity(8) end
 end)
 local function flag(name)
     if type(isfile) ~= 'function' then return false end
@@ -25212,7 +25293,7 @@ function Backend.createRuntime()
                                                                         C = destinations[pc]
                                                                         r = registers[jumpOperands[pc] ]
                                                                         registers[C + 1] = r
-                                                                        registers[C] = r[constantValues[pc] ]
+                                                                        registers[C] = __safeMethod(r, constantValues[pc])
                                                                     end
                                                                 end
                                                             elseif vmState[48] == vmState[43] then
